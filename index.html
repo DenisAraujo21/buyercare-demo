@@ -1,5 +1,5 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
-<title>Codeart Buyer Care</title>
+﻿<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Codeart CodeLar</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Outfit:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
@@ -11,7 +11,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Buyer Care">
+<meta name="apple-mobile-web-app-title" content="CodeLar">
 <script>
   if('serviceWorker' in navigator){
     window.addEventListener('load', function(){
@@ -507,7 +507,7 @@ const state = {
   },
   novoAtendimento:{ ambiente:'', tipo:'', descricao:'', data:'' },
   chat:[
-    {from:'bot', text:'Olá, Marcos! Sou o assistente virtual do Buyer Care. Já sei quem você é, o contrato e a unidade — pode perguntar direto, sem precisar se identificar de novo.'},
+    {from:'bot', text:'Olá, Marcos! Sou o assistente virtual do CodeLar. Já sei quem você é, o contrato e a unidade — pode perguntar direto, sem precisar se identificar de novo.'},
   ],
 };
 
@@ -639,7 +639,7 @@ function screenLogin(){
   const erro = state.loginErro;
   return {body:`
     <div class="login-screen">
-      <h1 style="color:var(--chrome-text); font-size:26px; margin:0;">Buyer<span style="color:var(--chrome-accent);">Care</span></h1>
+      <h1 style="color:var(--chrome-text); font-size:26px; margin:0;">Code<span style="color:var(--chrome-accent);">Lar</span></h1>
       <p class="eyebrow" style="color:var(--chrome-text-muted); margin-top:6px;">by Codeart</p>
       <p class="login-tagline">Da assinatura à entrega das chaves.</p>
       <div class="login-actions">
@@ -762,12 +762,11 @@ function formatarDataMesAno(iso){
   const [y,m] = iso.split('-');
   return meses[parseInt(m,10)-1]+'/'+y;
 }
-/* Busca o plano de pagamento real (SerieFluxoPagamento__c, via proxy) e expande
-   cada serie (ex: "Parcelas Mensais" 48x) em parcelas individuais com data de
-   vencimento calculada. O status de cada parcela e' honesto: so' compara a data
-   de vencimento com hoje ("A vencer" / "Vencimento passado") - nunca afirma que
-   uma parcela foi paga ou nao, porque isso nao esta' integrado na org ainda
-   (nao existe registro de boleto/pagamento real pra confirmar). */
+/* Busca os boletos reais (CA_Boleto__c, um registro por parcela, via proxy) -
+   e' o que um RPA/integracao bancaria real geraria parcela a parcela. O status
+   de cada parcela agora e' REAL (Pago/Pendente/Cancelado, vem gravado no
+   registro) - "Atrasado" e' a unica excecao calculada no backend (Pendente
+   com vencimento no passado), nunca inventado aqui no front. */
 async function carregarFinanceiroReal(contrato){
   if(!contrato.oportunidadeId) return;
   try{
@@ -777,34 +776,18 @@ async function carregarFinanceiroReal(contrato){
       body: JSON.stringify({oportunidadeId: contrato.oportunidadeId})
     });
     const dados = await resp.json();
-    if(!resp.ok || dados.erro || !Array.isArray(dados.series)) return;
+    if(!resp.ok || dados.erro || !Array.isArray(dados.boletos)) return;
 
-    const hoje = new Date(); hoje.setHours(0,0,0,0);
-    const parcelas = [];
-    let seq = 0;
-    for(const s of dados.series){
-      const [y,m,d] = (s.primeiroVencimento||'').split('-').map(n=>parseInt(n,10));
-      for(let i=0;i<(s.parcelas||0);i++){
-        seq++;
-        const venc = new Date(Date.UTC(y, (m-1)+i, d));
-        const vencIso = venc.toISOString().slice(0,10);
-        parcelas.push({
-          id:'real-'+seq,
-          desc: s.serie+' '+(i+1)+'/'+s.parcelas,
-          valor: s.valorParcela,
-          vencimento: formatarDataBr(vencIso),
-          status: venc < hoje ? 'Vencimento passado' : 'A vencer'
-        });
-      }
-    }
+    const parcelas = dados.boletos.map(b => ({
+      id:'boleto-'+b.numeroParcela,
+      desc:'Parcela '+b.numeroParcela,
+      valor: b.valor,
+      vencimento: formatarDataBr(b.vencimento),
+      dataPagamento: b.dataPagamento? formatarDataBr(b.dataPagamento) : null,
+      status: b.status
+    }));
     contrato.parcelas = parcelas;
     contrato.financeiroReal = true;
-    const indexadores = [...new Set(dados.series.map(s=>s.indexador).filter(Boolean))];
-    contrato.incc = {
-      ultimoReajuste: '—',
-      dataReajuste: null,
-      indice: indexadores.length? indexadores.join(', ') : 'Sem indexador'
-    };
     if(dados.valorTotalContrato) contrato.contrato.valor = dados.valorTotalContrato;
     if(state.tab==='financeiro' || state.tab==='inicio') render();
   }catch(e){
@@ -814,7 +797,7 @@ async function carregarFinanceiroReal(contrato){
 /* Busca os documentos reais que o cliente RECEBEU da Codeart (hoje: so' o PDF do
    contrato assinado, anexado ao Contract) - nao e' o checklist que o corretor usa
    pra coletar RG/CPF/comprovantes do lead antes da venda (esse e' outro conceito,
-   do CodeChave, e nao faz sentido aqui: o cliente do BuyerCare ja' comprou). Se a
+   do CodeChave, e nao faz sentido aqui: o cliente do CodeLar ja' comprou). Se a
    org um dia tiver "manual do proprietario" ou outros documentos anexados ao
    Contract, eles aparecem aqui automaticamente - nao inventamos placeholder pros
    que ainda nao existem. */
@@ -929,12 +912,8 @@ function screenInicio(){
   const j = c.jornada;
   const action = `<button class="iconbtn" onclick="doLogout()" aria-label="Sair">${I.logout}</button>`;
   const etapaAtualIdx = j.etapas.findIndex(e=>e.status==='atual');
-  // prioriza a proxima parcela genuinamente futura ("A vencer") - com dado real,
-  // a 1a parcela sem status "Pago" pode ser o Ato ja' com data passada, o que
-  // confundiria o cliente vendo isso como "a proxima a vencer"
-  const proxParcela = c.parcelas.find(p=>p.status==='A vencer') || c.parcelas.find(p=>p.status!=='Pago');
+  const proxParcela = c.parcelas.find(p=>p.status==='Pendente') || c.parcelas.find(p=>p.status!=='Pago');
   const atrasadas = c.parcelas.filter(p=>p.status==='Atrasado');
-  const vencidaSemConfirmacao = c.financeiroReal && c.parcelas.find(p=>p.status==='Vencimento passado');
   const docsPend = c.documentosReal ? [] : c.documentos.filter(d=>d.status==='Pendente');
   const docsPendentes = docsPend.length;
   const docsDisponiveis = c.documentosReal ? c.documentos.length : 0;
@@ -978,14 +957,6 @@ function screenInicio(){
         <div>
           <b>Parcela em atraso</b>
           <div class="muted" style="font-size:12px; margin-top:2px;">${atrasadas.map(p=>`<b>${p.desc}</b> (${brl(p.valor)}, venceu em ${p.vencimento})`).join(', ')}. Regularize para evitar juros e manter o financiamento em dia.</div>
-        </div>
-      </div>
-    ` : vencidaSemConfirmacao? `
-      <div class="alert-card warn">
-        ${I.alert}
-        <div>
-          <b>Parcela com vencimento em ${vencidaSemConfirmacao.vencimento}</b>
-          <div class="muted" style="font-size:12px; margin-top:2px;">${vencidaSemConfirmacao.desc} · ${brl(vencidaSemConfirmacao.valor)}. Se você já pagou, pode ignorar este aviso — a confirmação automática ainda não está disponível aqui.</div>
         </div>
       </div>
     ` : docsPend.length? `
@@ -1053,23 +1024,13 @@ function toggleFinanceiroExpandido(){
 function screenFinanceiroList(){
   const c = contratoAtivo();
   const parcelas = c.parcelas;
-  const badgeCls = st => st==='Pago'?'badge-available':st==='Atrasado'?'badge-sold':st==='Vencimento passado'?'badge-reserved':st==='A vencer'?'badge-blue':'badge-reserved';
-  const vencidas = parcelas.filter(p=>p.status==='Vencimento passado' || p.status==='Atrasado');
-  const statsRow = c.financeiroReal ? `
-    <div class="stats-row" style="margin-bottom:18px;">
-      <div class="stat-tile"><div class="n mono">${parcelas.length}</div><div class="l">Parcelas no plano</div></div>
-      <div class="stat-tile"><div class="n mono" style="font-size:15px;">${brl(c.contrato.valor)}</div><div class="l">Valor total do contrato</div></div>
-      <div class="stat-tile"><div class="n mono">${c.incc.indice}</div><div class="l">Indexador</div></div>
-    </div>
-    <div class="alert-card info" style="margin-bottom:14px;">
-      ${I.alert}
-      <div><b>Status por data, não por pagamento</b><div class="muted" style="font-size:12px; margin-top:2px;">"A vencer" / "Vencimento passado" é calculado pela data prevista — a confirmação de boleto pago ainda não está integrada aqui. Fale com seu consultor pra confirmar um pagamento.</div></div>
-    </div>
-  ` : `
+  const badgeCls = st => st==='Pago'?'badge-available':st==='Atrasado'?'badge-sold':'badge-blue';
+  const vencidas = parcelas.filter(p=>p.status==='Atrasado');
+  const statsRow = `
     <div class="stats-row" style="margin-bottom:18px;">
       <div class="stat-tile"><div class="n mono">${parcelas.filter(p=>p.status==='Pago').length}/${parcelas.length}</div><div class="l">Parcelas pagas</div></div>
       <div class="stat-tile"><div class="n mono">${brl(parcelas.filter(p=>p.status==='Pago').reduce((s,p)=>s+p.valor,0))}</div><div class="l">Total quitado</div></div>
-      <div class="stat-tile"><div class="n mono">${c.incc.ultimoReajuste}</div><div class="l">${c.incc.indice}</div></div>
+      <div class="stat-tile"><div class="n mono" style="font-size:15px;">${brl(c.contrato.valor)}</div><div class="l">Valor total do contrato</div></div>
     </div>
     ${vencidas.length? `
       <div class="alert-card">
@@ -1120,7 +1081,7 @@ function screenFinanceiroList(){
 function screenParcelaDetail({id}){
   const c = contratoAtivo();
   const p = c.parcelas.find(x=>x.id===id);
-  const badgeCls = st => st==='Pago'?'badge-available':st==='Atrasado'?'badge-sold':st==='Vencimento passado'?'badge-reserved':st==='A vencer'?'badge-blue':'badge-reserved';
+  const badgeCls = st => st==='Pago'?'badge-available':st==='Atrasado'?'badge-sold':'badge-blue';
   const body = `
     <div class="price-hero">
       <div class="label">${p.desc}</div>
