@@ -1,0 +1,9 @@
+name = "buyercare-proxy"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+# As variaveis sensiveis (SF_CLIENT_ID, SF_CLIENT_SECRET, SF_APP_TOKEN) NAO vao
+# aqui - sao configuradas como "secret" via linha de comando (wrangler secret put),
+# nunca commitadas. So a URL de login fica aqui porque nao e' segredo.
+[vars]
+SF_LOGIN_URL = "https://co1781648434036.my.salesforce.com"
