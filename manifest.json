@@ -1,7 +1,7 @@
 {
-  "name": "BuyerCare",
-  "short_name": "BuyerCare",
-  "description": "BuyerCare by Codeart - acompanhamento do cliente pós-assinatura",
+  "name": "CodeLar",
+  "short_name": "CodeLar",
+  "description": "CodeLar by Codeart - acompanhamento do cliente pós-assinatura",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
