@@ -1,0 +1,1601 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Codeart Buyer Care</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Outfit:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<!-- PWA: instalar na tela de inicio e abrir 100% em tela cheia, sem barra de navegador -->
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#303e47">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Buyer Care">
+<script>
+  if('serviceWorker' in navigator){
+    window.addEventListener('load', function(){
+      navigator.serviceWorker.register('sw.js').catch(function(){});
+    });
+  }
+  if (window.navigator && window.navigator.standalone === true) {
+    document.documentElement.classList.add('standalone-app');
+  }
+</script>
+<style>
+  :root{
+    --bg:#f2f2f2; --surface:#ffffff; --surface-2:#eaeced; --border:#dadcde;
+    --text:#303e47; --text-muted:#59656c;
+    --accent:#416072; --accent-contrast:#ffffff; --sun:#fed600;
+    --status-available:#257a4c; --status-reserved:#96661d; --status-sold:#b1524b;
+    --shadow: 0 16px 40px -18px rgba(48,62,71,.28);
+    --chrome-bg:#303e47; --chrome-bg-2:#416072; --chrome-text:#f2f2f2;
+    --chrome-text-muted:rgba(242,242,242,.62); --chrome-accent:#6cc0ed; --chrome-border:rgba(255,255,255,.1);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#1a2126; --surface:#232b31; --surface-2:#2c363d; --border:#3b454d;
+      --text:#f2f2f2; --text-muted:#bdc6cc;
+      --accent:#6cc0ed; --accent-contrast:#1a2126; --sun:#fed600;
+      --status-available:#4cc287; --status-reserved:#e0ac4a; --status-sold:#e2726c;
+      --shadow: 0 16px 40px -18px rgba(0,0,0,.6);
+    }
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{margin:0; background:var(--bg); color:var(--text); font-family:'Outfit',-apple-system,BlinkMacSystemFont,sans-serif; -webkit-font-smoothing:antialiased;}
+  h1,h2,h3{font-family:'Poppins',-apple-system,sans-serif;}
+  .mono{font-family:'IBM Plex Mono',ui-monospace,monospace; font-variant-numeric:tabular-nums;}
+  :focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:4px;}
+  button{font:inherit; color:inherit;}
+  @media (prefers-reduced-motion: reduce){ *{animation-duration:.001ms !important; transition-duration:.001ms !important;} }
+
+  .stage{height:100%; display:flex; align-items:center; justify-content:center; padding:16px; background:
+    radial-gradient(circle at 20% 15%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 45%),
+    radial-gradient(circle at 85% 80%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 45%),
+    var(--bg);
+  }
+  .rig{position:relative; height:100%; display:flex; align-items:center;}
+  .bezel{display:none;}
+  .device{
+    width:min(calc(100vw - 32px), 404px); aspect-ratio:9/19.5; max-height:100%;
+    background:var(--surface); position:relative; display:flex; flex-direction:column;
+    overflow:hidden; border-radius:32px; box-shadow:var(--shadow);
+  }
+  @media (min-width:660px){
+    .stage{padding:36px 16px;}
+    .bezel{display:block; position:absolute; inset:-12px -12px -12px -12px; border-radius:52px; background:linear-gradient(160deg,#20263c,#0a0d17); box-shadow:var(--shadow), 0 0 0 1px rgba(255,255,255,.04) inset;}
+    .device{border-radius:40px; box-shadow:0 0 0 2px rgba(255,255,255,.05) inset;}
+    .notch{display:block;}
+  }
+  .notch{display:none; position:absolute; top:10px; left:50%; transform:translateX(-50%); width:104px; height:22px; background:#0a0d17; border-radius:12px; z-index:80;}
+
+  /* modo instalado (PWA) - a tela ja e o celular de verdade, entao tira a moldura
+     de "cartao simulando celular" e preenche 100% ponta a ponta */
+  @media (display-mode: standalone), (display-mode: fullscreen){
+    .stage{padding:0;}
+    .device{width:100vw; max-width:none; height:100%; border-radius:0; box-shadow:none;}
+    .bezel{display:none !important;}
+    .notch{display:none !important;}
+    .appbar{padding-top:calc(env(safe-area-inset-top,0px) + 14px);}
+    .tabbar{padding-bottom:calc(env(safe-area-inset-bottom,0px) + 8px);}
+    .toast{bottom:calc(env(safe-area-inset-bottom,0px) + 78px);}
+    .fab-agente{bottom:calc(env(safe-area-inset-bottom,0px) + 82px);}
+  }
+  html.standalone-app .stage{padding:0;}
+  html.standalone-app .device{width:100vw; max-width:none; height:100%; border-radius:0; box-shadow:none;}
+  html.standalone-app .bezel{display:none !important;}
+  html.standalone-app .notch{display:none !important;}
+  html.standalone-app .appbar{padding-top:calc(env(safe-area-inset-top,0px) + 14px);}
+  html.standalone-app .tabbar{padding-bottom:calc(env(safe-area-inset-bottom,0px) + 8px);}
+  html.standalone-app .toast{bottom:calc(env(safe-area-inset-bottom,0px) + 78px);}
+  html.standalone-app .fab-agente{bottom:calc(env(safe-area-inset-bottom,0px) + 82px);}
+
+  /* padding-top do appbar SEM safe-area por padrao: rodando dentro do Safari (nao
+     instalado), o proprio navegador ja reserva o espaco do notch/dynamic island com
+     a sua propria barra - se a gente tambem soma env(safe-area-inset-top) aqui, o
+     espaco fica contado em dobro e o cabecalho aparece gigante (foi o que o Denis
+     viu). So somamos esse inset de verdade quando o app roda instalado em tela
+     cheia (acima), onde ai sim nao existe mais barra nenhuma do navegador. */
+  .appbar{flex:0 0 auto; display:flex; align-items:center; gap:8px; padding:14px 14px 12px; background:var(--chrome-bg); border-bottom:1px solid var(--chrome-border); position:relative; z-index:20;}
+  .appbar h1{margin:0; font-size:17px; font-weight:700; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--chrome-text);}
+  .iconbtn{width:34px; height:34px; border-radius:10px; border:none; background:transparent; display:flex; align-items:center; justify-content:center; cursor:pointer; color:var(--chrome-text); flex:0 0 auto;}
+  .iconbtn[hidden]{display:none !important;} /* mesmo caso do .fab-agente: regra de author com display:flex vence [hidden] do browser */
+  .iconbtn:hover{background:rgba(255,255,255,.1);}
+  .iconbtn svg{width:20px; height:20px;}
+  .header-action{flex:0 0 auto; display:flex; gap:6px;}
+
+  #view{flex:1 1 auto; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; position:relative;}
+  .screen{padding:16px 16px 28px; animation:rise .22s ease both;}
+  @keyframes rise{from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:none;}}
+
+  .tabbar{flex:0 0 auto; display:flex; justify-content:space-around; background:var(--chrome-bg); border-top:1px solid var(--chrome-border); padding:8px 4px 8px; position:relative; z-index:20;}
+  .tab-btn{background:none; border:none; display:flex; flex-direction:column; align-items:center; gap:3px; color:var(--chrome-text-muted); cursor:pointer; padding:4px 8px; border-radius:10px; min-width:52px;}
+  .tab-btn svg{width:20px; height:20px;}
+  .tab-btn span{font-size:10px; font-weight:600; letter-spacing:.01em;}
+  .tab-btn.active{color:var(--chrome-accent);}
+
+  .home-indicator{position:absolute; bottom:6px; left:50%; transform:translateX(-50%); width:120px; height:4px; border-radius:2px; background:var(--text); opacity:.22; z-index:60; pointer-events:none;}
+
+  p{line-height:1.5;}
+  .muted{color:var(--text-muted);}
+  .eyebrow{font-size:11px; font-weight:700; letter-spacing:.07em; text-transform:uppercase; color:var(--text-muted);}
+  .section-title{font-size:15px; font-weight:700; margin:22px 0 10px; display:flex; align-items:center; justify-content:space-between; gap:8px;}
+  .section-title:first-child{margin-top:0;}
+
+  .card{background:var(--surface); border:1px solid var(--border); border-radius:16px;}
+  .list-card{background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:13px 14px; display:flex; gap:12px; align-items:center; cursor:pointer; width:100%; text-align:left;}
+  .list-card + .list-card{margin-top:10px;}
+  .list-card:hover{border-color:color-mix(in srgb, var(--accent) 40%, var(--border));}
+  .stack{display:flex; flex-direction:column; gap:10px;}
+
+  .avatar{width:42px; height:42px; border-radius:50%; background:var(--surface-2); display:flex; align-items:center; justify-content:center; font-weight:700; font-family:'Poppins',sans-serif; color:var(--accent); flex:0 0 auto; font-size:14px;}
+  .avatar.icon{color:var(--accent);}
+  .avatar.icon svg{width:20px; height:20px;}
+
+  .btn{display:inline-flex; align-items:center; justify-content:center; gap:8px; border-radius:12px; padding:13px 18px; font-weight:600; font-size:14.5px; border:1px solid transparent; cursor:pointer; width:100%;}
+  .btn svg{width:17px; height:17px;}
+  .btn-primary{background:var(--chrome-bg); color:var(--chrome-text);}
+  .btn-primary:hover{background:var(--chrome-bg-2);}
+  .btn-primary:disabled{opacity:.4; cursor:not-allowed;}
+  .btn-secondary{background:var(--surface-2); color:var(--text); border-color:var(--border);}
+  .btn-ghost{background:transparent; color:var(--accent); padding:10px 6px; width:auto;}
+  .btn-row{display:flex; gap:10px;}
+  .btn-row .btn{width:auto; flex:1;}
+
+  .field{margin-bottom:14px;}
+  .field label{display:block; font-size:12.5px; font-weight:600; color:var(--text-muted); margin-bottom:6px;}
+  .field input, .field select, .field textarea{width:100%; background:var(--surface-2); border:1px solid var(--border); border-radius:11px; padding:11px 12px; font-size:14.5px; color:var(--text); font-family:inherit;}
+  .field textarea{resize:vertical; min-height:70px;}
+  .field-row{display:flex; gap:10px;}
+  .field-row .field{flex:1; min-width:0;}
+  .field-row .field input, .field-row .field select{min-width:0;}
+
+  .badge{display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700; padding:4px 9px; border-radius:999px; letter-spacing:.01em; white-space:nowrap;}
+  .badge-blue{background:color-mix(in srgb, var(--accent) 16%, transparent); color:var(--accent);}
+  .badge-available{background:color-mix(in srgb, var(--status-available) 8%, transparent); color:var(--status-available);}
+  .badge-reserved{background:color-mix(in srgb, var(--status-reserved) 6%, transparent); color:var(--status-reserved);}
+  .badge-sold{background:color-mix(in srgb, var(--status-sold) 7%, transparent); color:var(--status-sold);}
+  .dot{width:8px; height:8px; border-radius:50%; flex:0 0 auto;}
+  .dot-available{background:var(--status-available);}
+  .dot-reserved{background:var(--status-reserved);}
+  .dot-sold{background:var(--status-sold);}
+
+  .stats-row{display:grid; grid-template-columns:repeat(3,1fr); gap:10px;}
+  .stat-tile{background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:12px; min-width:0;}
+  .stat-tile .n{font-family:'IBM Plex Mono'; font-size:20px; font-weight:600; font-variant-numeric:tabular-nums;}
+  .stat-ic svg{width:16px; height:16px;}
+  .stat-tile .l{font-size:11px; color:var(--text-muted); margin-top:2px;}
+
+  .quick-actions{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+  .quick-btn{background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:14px; display:flex; flex-direction:column; gap:8px; align-items:flex-start; cursor:pointer; min-width:0;}
+  .quick-btn .ic{width:34px; height:34px; border-radius:10px; display:flex; align-items:center; justify-content:center; background:color-mix(in srgb, var(--accent) 14%, transparent); color:var(--accent);}
+  .quick-btn .ic svg{width:18px; height:18px;}
+  .quick-btn b{font-size:13.5px;}
+
+  .chip-row{display:flex; gap:8px; overflow-x:auto; -webkit-overflow-scrolling:touch; scroll-snap-type:x proximity; padding-bottom:2px; margin-bottom:14px;}
+  .chip{flex:0 0 auto; scroll-snap-align:start; padding:8px 13px; border-radius:999px; border:1px solid var(--border); background:var(--surface); font-size:12.5px; font-weight:600; color:var(--text-muted); cursor:pointer; white-space:nowrap;}
+  .chip.active{background:var(--chrome-bg); border-color:var(--chrome-bg); color:var(--chrome-text);}
+
+  .progressbar{height:6px; border-radius:99px; background:var(--surface-2); overflow:hidden;}
+  .progressbar > i{display:block; height:100%; background:var(--accent); border-radius:99px;}
+
+  .hero-panel{background:var(--chrome-bg); border-radius:18px; padding:20px 18px; margin-bottom:18px;}
+  .hero-ring{
+    --pct:0; flex:0 0 auto; width:56px; height:56px; border-radius:50%;
+    background:conic-gradient(var(--chrome-accent) calc(var(--pct)*1%), rgba(255,255,255,.14) 0);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .hero-ring span{
+    width:44px; height:44px; border-radius:50%; background:var(--chrome-bg);
+    display:flex; align-items:center; justify-content:center;
+    font-family:'IBM Plex Mono'; font-size:12.5px; font-weight:600; color:var(--chrome-text);
+  }
+  /* botao "trocar de unidade" dentro do hero-panel (fundo escuro) e do card
+     equivalente na aba Atendimento - mesmo estilo nos dois lugares, pra ficar claro
+     que e a mesma acao */
+  .unit-switch{
+    all:unset; display:flex; align-items:center; gap:6px; cursor:pointer;
+    margin-top:14px; padding-top:14px; border-top:1px solid var(--chrome-border);
+    width:100%; box-sizing:border-box;
+    font-size:12px; font-weight:600; color:var(--chrome-accent);
+  }
+  .unit-switch svg{width:15px; height:15px; flex:0 0 auto;}
+  .unit-switch svg:last-child{margin-left:auto;}
+
+  .kv-table{border:1px solid var(--border); border-radius:14px; overflow:hidden;}
+  .kv-row{display:flex; justify-content:space-between; padding:11px 14px; font-size:13.5px; gap:10px;}
+  .kv-row + .kv-row{border-top:1px solid var(--border);}
+  .kv-row .k{color:var(--text-muted);}
+  /* sem font-family mono aqui de proposito - as linhas de uma kv-table misturam datas,
+     enderecos, status etc, e forcar todo mundo numa fonte monoespacada so pra alinhar
+     numeros deixa o texto com "fonte estranha" no meio do resto do app (feedback do
+     Denis). Mono continua so onde faz sentido (valores grandes em destaque: .mono,
+     .stat-tile .n, .price-hero .amount). */
+  .kv-row .v{font-weight:600; text-align:right;}
+
+  .price-hero{background:var(--chrome-bg); border:1px solid var(--chrome-border); border-radius:16px; padding:16px; margin:14px 0;}
+  .price-hero .label{color:var(--chrome-text-muted); font-size:12px;}
+  .price-hero .amount{font-family:'IBM Plex Mono'; font-size:26px; font-weight:600; letter-spacing:-.01em; color:var(--chrome-accent);}
+
+  .timeline{display:flex; flex-direction:column;}
+  .tl-item{display:flex; gap:12px;}
+  .tl-dot-wrap{display:flex; flex-direction:column; align-items:center;}
+  .tl-dot{width:13px; height:13px; border-radius:50%; background:var(--border); flex:0 0 auto; margin-top:3px; display:flex; align-items:center; justify-content:center;}
+  .tl-dot.done{background:var(--status-available);}
+  .tl-dot.current{background:var(--accent); box-shadow:0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent);}
+  .tl-line{width:2px; flex:1; background:var(--border); min-height:26px;}
+  .tl-line.done{background:var(--status-available);}
+  .tl-item:last-child .tl-line{display:none;}
+  .tl-body{padding-bottom:22px; flex:1; min-width:0;}
+  .tl-body b{font-size:13.5px; display:block;}
+  .tl-body span{font-size:11.5px; color:var(--text-muted);}
+  .tl-body.current b{color:var(--accent);}
+
+  .radio-card{border:1px solid var(--border); border-radius:14px; padding:12px 14px; display:flex; align-items:center; gap:12px; cursor:pointer; background:var(--surface);}
+  .radio-card + .radio-card{margin-top:8px;}
+  .radio-card.sel{border-color:var(--accent); background:color-mix(in srgb, var(--accent) 8%, var(--surface));}
+  .radio-dot{width:18px; height:18px; border-radius:50%; border:2px solid var(--border); flex:0 0 auto; display:flex; align-items:center; justify-content:center;}
+  .radio-card.sel .radio-dot{border-color:var(--accent);}
+  .radio-card.sel .radio-dot::after{content:''; width:9px; height:9px; border-radius:50%; background:var(--accent);}
+
+  .alert-card{display:flex; align-items:flex-start; gap:10px; background:color-mix(in srgb, var(--status-sold) 10%, var(--surface)); border:1px solid color-mix(in srgb, var(--status-sold) 32%, var(--border)); border-radius:14px; padding:12px 14px; margin-bottom:14px;}
+  .alert-card svg{width:18px; height:18px; color:var(--status-sold); flex:0 0 auto; margin-top:1px;}
+  .alert-card b{font-size:13.5px; color:var(--status-sold);}
+  .alert-card.warn{background:color-mix(in srgb, var(--status-reserved) 10%, var(--surface)); border-color:color-mix(in srgb, var(--status-reserved) 32%, var(--border));}
+  .alert-card.warn svg{color:var(--status-reserved);}
+  .alert-card.warn b{color:var(--status-reserved);}
+  .alert-card.info{background:color-mix(in srgb, var(--accent) 8%, var(--surface)); border-color:color-mix(in srgb, var(--accent) 30%, var(--border));}
+  .alert-card.info svg{color:var(--accent);}
+  .alert-card.info b{color:var(--accent);}
+  .alert-card.success{background:color-mix(in srgb, var(--status-available) 10%, var(--surface)); border-color:color-mix(in srgb, var(--status-available) 32%, var(--border));}
+  .alert-card.success svg{color:var(--status-available);}
+  .alert-card.success b{color:var(--status-available);}
+
+  .login-screen{min-height:100%; width:100%; box-sizing:border-box; background:var(--chrome-bg); display:flex; flex-direction:column; align-items:center; justify-content:center; padding:40px 28px; text-align:center;}
+  .login-tagline{color:var(--chrome-text-muted); font-size:13px; margin:16px 0 0; max-width:270px; line-height:1.5;}
+  .login-actions{width:100%; max-width:280px; margin-top:40px;}
+  .btn-onlight{background:var(--chrome-text); color:var(--chrome-bg);}
+  .btn-onlight:hover{background:#ffffff;}
+  .login-footer{color:var(--chrome-text-muted); opacity:.6; font-size:10.5px; margin-top:32px; letter-spacing:.03em;}
+
+  .empty{text-align:center; padding:40px 16px; color:var(--text-muted);}
+  .empty svg{width:36px; height:36px; margin-bottom:10px; opacity:.5;}
+
+  .toast{position:absolute; left:16px; right:16px; bottom:78px; background:var(--text); color:var(--bg); padding:12px 14px; border-radius:12px; font-size:13px; font-weight:600; box-shadow:var(--shadow); display:flex; align-items:center; gap:8px; z-index:90; opacity:0; transform:translateY(8px); pointer-events:none; transition:opacity .18s ease, transform .18s ease;}
+  .toast.show{opacity:1; transform:none;}
+  .toast svg{width:16px; height:16px; color:var(--status-available); flex:0 0 auto;}
+
+  .success-badge{width:64px; height:64px; border-radius:50%; background:color-mix(in srgb, var(--status-available) 16%, transparent); display:flex; align-items:center; justify-content:center; margin:26px auto 16px;}
+  .success-badge svg{width:30px; height:30px; color:var(--status-available);}
+
+  .spinner{width:14px; height:14px; border-radius:50%; border:2px solid var(--border); border-top-color:var(--accent); animation:spin .7s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  /* botao flutuante do agente virtual - acessivel de qualquer tela, acima da tabbar */
+  .fab-agente{position:absolute; right:14px; bottom:82px; width:52px; height:52px; border-radius:50%; background:var(--chrome-accent); color:var(--chrome-bg); border:none; display:flex; align-items:center; justify-content:center; box-shadow:0 10px 24px -8px rgba(0,0,0,.4); cursor:pointer; z-index:40;}
+  /* nossa propria regra de display:flex acima tem a mesma especificidade do [hidden]
+     do navegador, mas como e uma regra "de autor" ela vence o [hidden] "de user-agent"
+     por origem da cascata - sem isso o botao ficava visivel na tela de login mesmo
+     com o atributo hidden aplicado */
+  .fab-agente[hidden]{display:none !important;}
+  .fab-agente svg{width:24px; height:24px;}
+
+  /* obra: cartao de foto/comunicado mensal */
+  .obra-photo{border-radius:14px; overflow:hidden; background:var(--chrome-bg); aspect-ratio:16/10; position:relative; display:flex; align-items:flex-end;}
+  .obra-photo svg{width:100%; height:100%; display:block;}
+  .obra-photo .tag{position:absolute; top:10px; left:10px; background:rgba(0,0,0,.4); color:#fff; font-size:9.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; padding:4px 8px; border-radius:999px;}
+
+  /* etapa da obra: nome + barra de progresso */
+  .obra-etapa{margin-bottom:14px;}
+  .obra-etapa .row{display:flex; justify-content:space-between; font-size:13px; font-weight:600; margin-bottom:6px;}
+  .obra-etapa .row span:last-child{font-family:'IBM Plex Mono'; color:var(--text-muted); font-weight:600;}
+
+  /* chat do agente virtual */
+  .chat-wrap{display:flex; flex-direction:column; gap:10px; padding-bottom:8px;}
+  .chat-bubble{max-width:82%; padding:11px 14px; border-radius:16px; font-size:13.5px; line-height:1.45;}
+  .chat-bubble.bot{background:var(--surface); border:1px solid var(--border); align-self:flex-start; border-bottom-left-radius:4px;}
+  .chat-bubble.user{background:var(--chrome-bg); color:var(--chrome-text); align-self:flex-end; border-bottom-right-radius:4px;}
+  .chat-bubble b{font-weight:700;}
+
+  ::-webkit-scrollbar{width:0; height:0;}
+</style>
+
+
+
+<div class="stage">
+  <div class="rig">
+    <div class="bezel"></div>
+    <div class="notch"></div>
+    <div class="device" id="device">
+      <header class="appbar" id="appbar">
+        <button class="iconbtn" id="backBtn" onclick="goBack()" aria-label="Voltar" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+        <h1 id="headerTitle">Início</h1>
+        <div class="header-action" id="headerAction"></div>
+      </header>
+      <main id="view"></main>
+      <button class="fab-agente" id="fabAgente" onclick="abrirAgente()" aria-label="Agente virtual" hidden></button>
+      <nav class="tabbar" id="tabbar">
+        <button class="tab-btn" data-tab="inicio" onclick="switchTab('inicio')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>
+          <span>Início</span>
+        </button>
+        <button class="tab-btn" data-tab="financeiro" onclick="switchTab('financeiro')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-3"/><path d="M2.5 9.5V6a2 2 0 0 1 2-2h11"/><path d="M17.5 14.5h3a1 1 0 0 0 1-1v-3a1 1 0 0 0-1-1h-3a2.5 2.5 0 0 0 0 5z"/></svg>
+          <span>Financeiro</span>
+        </button>
+        <button class="tab-btn" data-tab="documentos" onclick="switchTab('documentos')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5"/><path d="M9 13l2 2 4-4"/></svg>
+          <span>Docs</span>
+        </button>
+        <button class="tab-btn" data-tab="obra" onclick="switchTab('obra')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V9l7-5 7 5v12"/><path d="M9 21v-6h4v6"/></svg>
+          <span>Obra</span>
+        </button>
+        <button class="tab-btn" data-tab="atendimento" onclick="switchTab('atendimento')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 1-5.4 5.4L4 17v3h3l5.3-5.3a4 4 0 0 1 5.4-5.4l-2.7 2.7-2-2z"/></svg>
+          <span>Atendim.</span>
+        </button>
+      </nav>
+      <div class="home-indicator"></div>
+      <div class="toast" id="toast"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* URL base do proxy serverless (proxy/worker.js) que guarda o segredo do OAuth
+   Client Credentials Flow e fala com o Salesforce por tras - ajustar aqui depois
+   do deploy no Cloudflare Workers (ex: 'https://buyercare-proxy.SEU-SUBDOMINIO.workers.dev'). */
+const BUYERCARE_API_BASE = 'https://buyercare-proxy.codeart-solutions.workers.dev';
+
+/* ---------- icones ---------- */
+const I = {
+  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>',
+  chevron:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>',
+  emptyDoc:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5"/></svg>',
+  building:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V9l7-5 7 5v12"/><path d="M9 21v-6h4v6"/></svg>',
+  close:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>',
+  edit:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
+  alert:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.7 3.86a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>',
+  contract:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5"/><path d="M9 13l2 2 4-4"/></svg>',
+  calendar:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16" rx="2.2"/><path d="M3 9.5h18"/><path d="M8 2.5v4M16 2.5v4"/><path d="M8 13.5h2M8 17h2M14 13.5h2M14 17h2"/></svg>',
+  wallet:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-3"/><path d="M2.5 9.5V6a2 2 0 0 1 2-2h11"/><path d="M17.5 14.5h3a1 1 0 0 0 1-1v-3a1 1 0 0 0-1-1h-3a2.5 2.5 0 0 0 0 5z"/></svg>',
+  logout:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>',
+  download:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg>',
+  camera:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13.5" r="3.6"/></svg>',
+  wrench:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 1-5.4 5.4L4 17v3h3l5.3-5.3a4 4 0 0 1 5.4-5.4l-2.7 2.7-2-2z"/></svg>',
+  chat:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-8.9 8.4 8.7 8.7 0 0 1-3.6-.7L3 20.5l1.4-4.2A8.4 8.4 0 1 1 21 11.5z"/><path d="M8 11h.01M12 11h.01M16 11h.01"/></svg>',
+  sparkle:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.9 5.6L19.5 9.5l-5.6 1.9L12 17l-1.9-5.6L4.5 9.5l5.6-1.9z"/></svg>',
+  photo:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="15" rx="2.2"/><circle cx="8.5" cy="10" r="1.6"/><path d="M21 16l-5.5-5.5L4 21"/></svg>',
+  mail:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4.5" width="19" height="15" rx="2"/><path d="M3 6l9 7 9-7"/></svg>',
+};
+
+/* ---------- dados mock (demo) ---------- */
+/* Um comprador pode ter mais de uma unidade/contrato com a Codeart (ex: comprou um
+   apto e depois investiu numa sala comercial). Por isso cada contrato carrega sua
+   propria jornada, financeiro, documentos, obra e atendimentos - e o "comprador" fica
+   fora, como dado compartilhado entre todas as unidades da mesma pessoa. */
+const DB = {
+  comprador:{ nome:'Marcos Tanaka', cpf:'345.812.660-21', email:'marcos.tanaka@gmail.com', telefone:'(41) 99823-4471' },
+  contratos:[
+    {
+      id:'c1',
+      contrato:{ empreendimento:'Torre Verona', unidade:'A-1201', torre:'A', metragem:352, valor:3750000, dataAssinatura:'12/03/2025' },
+      jornada:{
+        etapas:[
+          {nome:'Compra', status:'concluida'},
+          {nome:'Financeiro', status:'concluida'},
+          {nome:'Financiamento', status:'concluida'},
+          {nome:'Obra', status:'atual'},
+          {nome:'Vistoria', status:'pendente'},
+          {nome:'Entrega das chaves', status:'pendente'},
+          {nome:'Pós-entrega', status:'pendente'},
+        ],
+        previsao:'Conclusão da obra prevista para Mar/2027',
+      },
+      parcelas:[
+        {id:'p1', desc:'Entrada 8/12', valor:45000, vencimento:'05/08/2026', status:'Pago'},
+        {id:'p2', desc:'Parcela obra 2/40', valor:31250, vencimento:'05/08/2026', status:'Pago'},
+        {id:'p3', desc:'Entrada 9/12', valor:45000, vencimento:'05/09/2026', status:'Atrasado'},
+        {id:'p4', desc:'Parcela obra 3/40', valor:31250, vencimento:'05/09/2026', status:'Pendente'},
+        {id:'p5', desc:'Entrada 10/12', valor:45000, vencimento:'05/10/2026', status:'Pendente'},
+        {id:'p6', desc:'Parcela obra 4/40', valor:31250, vencimento:'05/10/2026', status:'Pendente'},
+      ],
+      incc:{ ultimoReajuste:'1,42%', dataReajuste:'01/07/2026', indice:'INCC-M' },
+      documentos:[
+        {nome:'Contrato de compra e venda', tipo:'Contrato', status:'Aprovado'},
+        {nome:'Proposta comercial', tipo:'Proposta', status:'Aprovado'},
+        {nome:'RG e CPF', tipo:'Cadastral', status:'Aprovado'},
+        {nome:'Comprovante de residência', tipo:'Financiamento', status:'Aprovado'},
+        {nome:'Minuta bancária', tipo:'Financiamento', status:'Aprovado'},
+        {nome:'Manual do proprietário', tipo:'Entrega', status:'Indisponível'},
+      ],
+      obra:{
+        percentualGeral:62,
+        previsao:'Mar/2027',
+        etapas:[
+          {nome:'Fundação', pct:100},
+          {nome:'Estrutura', pct:100},
+          {nome:'Alvenaria e instalações', pct:78},
+          {nome:'Acabamento', pct:25},
+          {nome:'Entrega', pct:0},
+        ],
+        comunicados:[
+          {data:'01/09/2026', titulo:'Avanço de setembro', resumo:'Concluída a alvenaria do pavimento 18. Início do revestimento externo da torre.'},
+          {data:'01/08/2026', titulo:'Avanço de agosto', resumo:'Estrutura 100% concluída. Início da alvenaria dos pavimentos superiores.'},
+          {data:'01/07/2026', titulo:'Avanço de julho', resumo:'Concluída a estrutura até o pavimento 15. Fundação e estrutura seguem dentro do cronograma.'},
+        ],
+      },
+      atendimentos:[
+        {id:'at1', protocolo:'AT-2026-0142', tipo:'Infiltração', ambiente:'Banheiro suíte', descricao:'Infiltração no rodapé próximo ao box.', status:'Em andamento', sla:'Resposta em até 2 dias úteis', data:'10/09/2026'},
+        {id:'at2', protocolo:'AT-2026-0098', tipo:'Porta emperrando', ambiente:'Sala', descricao:'Porta de correr da varanda emperrando ao fechar.', status:'Concluído', sla:'Atendido em 3 dias úteis', data:'22/08/2026'},
+      ],
+    },
+    {
+      id:'c2',
+      contrato:{ empreendimento:'Residencial Bosque Ipê', unidade:'B-0304', torre:'B', metragem:78, valor:850000, dataAssinatura:'20/01/2026' },
+      jornada:{
+        etapas:[
+          {nome:'Compra', status:'concluida'},
+          {nome:'Financeiro', status:'concluida'},
+          {nome:'Financiamento', status:'atual'},
+          {nome:'Obra', status:'pendente'},
+          {nome:'Vistoria', status:'pendente'},
+          {nome:'Entrega das chaves', status:'pendente'},
+          {nome:'Pós-entrega', status:'pendente'},
+        ],
+        previsao:'Conclusão da obra prevista para Nov/2028',
+      },
+      parcelas:[
+        {id:'q1', desc:'Entrada 1/6', valor:14200, vencimento:'20/02/2026', status:'Pago'},
+        {id:'q2', desc:'Entrada 2/6', valor:14200, vencimento:'20/03/2026', status:'Pago'},
+        {id:'q3', desc:'Entrada 3/6', valor:14200, vencimento:'20/04/2026', status:'Pago'},
+        {id:'q4', desc:'Entrada 4/6', valor:14200, vencimento:'20/05/2026', status:'Pendente'},
+      ],
+      incc:{ ultimoReajuste:'0,98%', dataReajuste:'01/06/2026', indice:'INCC-M' },
+      documentos:[
+        {nome:'Contrato de compra e venda', tipo:'Contrato', status:'Aprovado'},
+        {nome:'Proposta comercial', tipo:'Proposta', status:'Aprovado'},
+        {nome:'RG e CPF', tipo:'Cadastral', status:'Aprovado'},
+        {nome:'Minuta bancária', tipo:'Financiamento', status:'Pendente'},
+      ],
+      obra:{
+        percentualGeral:0,
+        previsao:'Nov/2028',
+        etapas:[
+          {nome:'Fundação', pct:0},
+          {nome:'Estrutura', pct:0},
+          {nome:'Alvenaria e instalações', pct:0},
+          {nome:'Acabamento', pct:0},
+          {nome:'Entrega', pct:0},
+        ],
+        comunicados:[],
+      },
+      atendimentos:[],
+    },
+  ],
+};
+let nextAtendimentoNum = 143;
+/* contrato atualmente selecionado - todas as telas (Financeiro, Documentos, Obra,
+   Atendimento) mostram sempre os dados dessa unidade. Trocar de unidade so muda
+   esse ponteiro, os dados de cada contrato continuam intactos. */
+function contratoAtivo(){ return DB.contratos.find(c=>c.id===state.contratoAtivo); }
+function etapaAtualLabel(c){
+  const atual = c.jornada.etapas.find(e=>e.status==='atual');
+  return atual ? 'Etapa atual: '+atual.nome : 'Concluído';
+}
+
+/* ---------- estado ---------- */
+const state = {
+  tab:'inicio',
+  mode:'login',
+  loginLoading:false,
+  loginEmail:'miguel.martins.teste@buyercare.demo',
+  loginErro:null,
+  financeiroExpandido:false,
+  agenteOpen:false,
+  contratoAtivo:'c1',
+  stacks:{
+    inicio:[{screen:'inicio'}],
+    financeiro:[{screen:'financeiroList'}],
+    documentos:[{screen:'documentosList'}],
+    obra:[{screen:'obraDetail'}],
+    atendimento:[{screen:'atendimentoList'}],
+  },
+  novoAtendimento:{ ambiente:'', tipo:'', descricao:'', data:'' },
+  chat:[
+    {from:'bot', text:'Olá, Marcos! Sou o assistente virtual do Buyer Care. Já sei quem você é, o contrato e a unidade — pode perguntar direto, sem precisar se identificar de novo.'},
+  ],
+};
+
+/* ---------- helpers de formatacao ---------- */
+function brl(v){ return 'R$ ' + v.toLocaleString('pt-BR', {minimumFractionDigits:0, maximumFractionDigits:0}); }
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.innerHTML = I.check + '<span>'+msg+'</span>';
+  t.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(()=>t.classList.remove('show'), 2200);
+}
+
+/* ---------- navegacao (mesma arquitetura do CodeChave) ---------- */
+function currentStack(){ return state.stacks[state.tab]; }
+function currentScreen(){
+  const top = currentStack()[currentStack().length-1];
+  return SCREENS[top.screen](top.params||{});
+}
+function go(screen, params){
+  currentStack().push({screen, params});
+  render({resetScroll:true});
+}
+function replaceTop(screen, params){
+  currentStack()[currentStack().length-1] = {screen, params};
+  render({resetScroll:true});
+}
+function resetTabTo(screen, params){
+  state.stacks[state.tab] = [{screen, params}];
+  render({resetScroll:true});
+}
+function goBack(){
+  if(currentStack().length>1){ currentStack().pop(); render({resetScroll:true}); }
+}
+function switchTab(tab){
+  // tocar numa aba que ja esta ativa volta pro topo dela (padrao comum de app com
+  // tabbar) - sem isso, se voce tivesse entrado fundo numa aba e tocasse nela de
+  // novo esperando "resetar", nada acontecia, o que parecia um bug de navegacao
+  if(state.tab===tab){ state.stacks[tab] = [state.stacks[tab][0]]; }
+  state.tab = tab;
+  state.agenteOpen = false;
+  render({resetScroll:true});
+}
+/* O agente virtual e uma janela "por cima" do app, independente da pilha de
+   navegacao de qualquer aba - antes ele era empurrado pra dentro da pilha da aba
+   atual (igual um go() normal), e isso causava exatamente o bug que o Denis
+   reportou: abrir o agente a partir de Documentos "grudava" a tela do agente no
+   topo da pilha de Documentos, e tocar em Documentos de novo na tabbar so
+   re-renderizava o topo da pilha (o proprio agente) em vez de voltar pra lista.
+   Com o agente fora da pilha, abrir/fechar ele nunca mexe em qual tela cada aba
+   estava mostrando. */
+function abrirAgente(){
+  state.agenteOpen = true;
+  render();
+}
+function fecharAgente(){
+  state.agenteOpen = false;
+  render();
+}
+/* Trocar de unidade reinicia a pilha de todas as abas para a tela raiz - os dados
+   mudam (financeiro, documentos, obra e atendimento passam a ser os da unidade
+   escolhida), entao nao faz sentido manter uma tela de detalhe aberta (ex: parcela
+   ou atendimento) que pertencia ao contrato anterior. A aba em que o usuario estava
+   e mantida - se ele trocou de unidade a partir do Atendimento, por exemplo, volta
+   pro Atendimento (agora da nova unidade), nao pro Início. */
+function selecionarUnidade(id){
+  if(id===state.contratoAtivo){ goBack(); return; }
+  state.contratoAtivo = id;
+  state.stacks = {
+    inicio:[{screen:'inicio'}], financeiro:[{screen:'financeiroList'}], documentos:[{screen:'documentosList'}],
+    obra:[{screen:'obraDetail'}], atendimento:[{screen:'atendimentoList'}],
+  };
+  toast('Mostrando agora: '+contratoAtivo().contrato.empreendimento+' · '+contratoAtivo().contrato.unidade);
+  render({resetScroll:true});
+}
+
+function render(opts={}){
+  const appbarEl = document.getElementById('appbar');
+  const tabbarEl = document.getElementById('tabbar');
+  const fabEl = document.getElementById('fabAgente');
+  if(state.mode==='login'){
+    appbarEl.style.display = 'none';
+    tabbarEl.style.display = 'none';
+    fabEl.hidden = true;
+    document.getElementById('view').innerHTML = screenLogin().body;
+    return;
+  }
+  appbarEl.style.display = 'flex';
+  tabbarEl.style.display = 'flex';
+  fabEl.hidden = state.agenteOpen;
+  fabEl.innerHTML = I.chat;
+  const view0 = document.getElementById('view');
+  const scrollTop = view0 ? view0.scrollTop : 0;
+  const {title, back, action, body} = state.agenteOpen ? screenAgenteChat() : currentScreen();
+  document.getElementById('headerTitle').textContent = title;
+  document.getElementById('backBtn').hidden = !back;
+  document.getElementById('headerAction').innerHTML = action||'';
+  const view = document.getElementById('view');
+  view.innerHTML = '<div class="screen">'+body+'</div>';
+  view.scrollTop = opts.resetScroll ? 0 : scrollTop;
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===state.tab));
+}
+
+/* ---------- selecao de unidade (compradores com mais de um imovel) ---------- */
+function screenSelecionarUnidade(){
+  const body = `
+    <p class="muted" style="margin-top:0;">Você tem ${DB.contratos.length} imóveis com a Codeart. Escolha qual deseja visualizar.</p>
+    ${DB.contratos.map(c=>`
+      <div class="radio-card ${c.id===state.contratoAtivo?'sel':''}" onclick="selecionarUnidade('${c.id}')">
+        <div class="radio-dot"></div>
+        <div style="flex:1; min-width:0;">
+          <b style="font-size:13.5px; display:block;">${c.contrato.empreendimento} · ${c.contrato.unidade}</b>
+          <span class="muted" style="font-size:11.5px;">${etapaAtualLabel(c)}</span>
+        </div>
+      </div>
+    `).join('')}
+  `;
+  return {title:'Minhas unidades', back:true, body};
+}
+
+/* ---------- login ---------- */
+/* Login social simulado pra demo (Google/Facebook nunca vistos de verdade aqui) -
+   o que importa pro backend e' so' o e-mail ja "verificado" pelo provedor social,
+   que a gente manda pro proxy (BUYERCARE_API_BASE) e ele casa com um Contact real
+   no Salesforce via CA_RestBuyerCareAuth. Sem senha nenhuma trafegando. */
+const GOOGLE_ICON = '<svg viewBox="0 0 24 24" width="17" height="17"><path fill="#4285F4" d="M23.52 12.27c0-.85-.08-1.67-.22-2.45H12v4.64h6.46c-.28 1.5-1.13 2.78-2.4 3.63v3.02h3.88c2.27-2.09 3.58-5.17 3.58-8.84z"/><path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.94-2.9l-3.88-3.02c-1.08.72-2.45 1.15-4.06 1.15-3.13 0-5.78-2.11-6.73-4.96H1.27v3.11C3.25 21.3 7.31 24 12 24z"/><path fill="#FBBC05" d="M5.27 14.27c-.25-.72-.38-1.49-.38-2.27s.14-1.55.38-2.27V6.62H1.27A11.96 11.96 0 0 0 0 12c0 1.93.46 3.76 1.27 5.38l4-3.11z"/><path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.44-3.44C17.95 1.19 15.24 0 12 0 7.31 0 3.25 2.7 1.27 6.62l4 3.11C6.22 6.86 8.87 4.75 12 4.75z"/></svg>';
+function screenLogin(){
+  const loading = state.loginLoading;
+  const erro = state.loginErro;
+  return {body:`
+    <div class="login-screen">
+      <h1 style="color:var(--chrome-text); font-size:26px; margin:0;">Buyer<span style="color:var(--chrome-accent);">Care</span></h1>
+      <p class="eyebrow" style="color:var(--chrome-text-muted); margin-top:6px;">by Codeart</p>
+      <p class="login-tagline">Da assinatura à entrega das chaves.</p>
+      <div class="login-actions">
+        <div class="field" style="text-align:left;">
+          <label style="color:var(--chrome-text-muted);">E-mail (simulando retorno do login social)</label>
+          <input type="email" id="loginEmail" value="${state.loginEmail||''}" placeholder="seu@email.com" ${loading?'disabled':''}>
+        </div>
+        <button class="btn btn-onlight" ${loading?'disabled':''} onclick="doLogin()">
+          ${loading? '<span class="spinner"></span> Entrando...' : (GOOGLE_ICON+' Continuar com Google (demo)')}
+        </button>
+        ${erro? `<p style="color:#e2726c; font-size:12.5px; margin-top:12px;">${erro}</p>` : ''}
+      </div>
+      <p class="login-footer">Demonstração &middot; login social simulado, sem senha</p>
+    </div>
+  `};
+}
+async function doLogin(){
+  const input = document.getElementById('loginEmail');
+  const email = (input?input.value:'').trim();
+  state.loginEmail = email;
+  if(!email){ state.loginErro = 'Digite um e-mail para continuar.'; render(); return; }
+
+  state.loginLoading = true;
+  state.loginErro = null;
+  render();
+
+  try{
+    const resp = await fetch(BUYERCARE_API_BASE + '/api/login', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({email})
+    });
+    const dados = await resp.json();
+
+    if(!resp.ok || dados.erro){
+      state.loginErro = dados.erro || 'Não foi possível entrar. Tente novamente.';
+      state.loginLoading = false;
+      render();
+      return;
+    }
+    if(!dados.encontrado){
+      state.loginErro = 'Não encontramos nenhum contrato vinculado a este e-mail.';
+      state.loginLoading = false;
+      render();
+      return;
+    }
+
+    DB.comprador.nome = dados.nome || DB.comprador.nome;
+    if(Array.isArray(dados.contratos) && dados.contratos.length){
+      const real = dados.contratos[0];
+      // o nome da Unidade no Salesforce as vezes ja vem com o nome do
+      // empreendimento dentro (ex: "TorreBlanca - Apartamento 1002") - evita
+      // repetir "TorreBlanca · TorreBlanca - Apartamento 1002" na tela
+      let unidade = real.unidade || DB.contratos[0].contrato.unidade;
+      if(real.empreendimento && unidade && unidade.startsWith(real.empreendimento)){
+        unidade = unidade.slice(real.empreendimento.length).replace(/^[\s\-·]+/, '');
+      }
+      DB.contratos[0].contrato.empreendimento = real.empreendimento || DB.contratos[0].contrato.empreendimento;
+      DB.contratos[0].contrato.unidade = unidade;
+      DB.contratos[0].contrato.valor = real.valor || DB.contratos[0].contrato.valor;
+      DB.contratos[0].oportunidadeId = real.oportunidadeId;
+    }
+
+    state.mode = 'app';
+    state.loginLoading = false;
+    render({resetScroll:true});
+    carregarObraReal(DB.contratos[0]);
+    carregarFinanceiroReal(DB.contratos[0]);
+    carregarDocumentosReal(DB.contratos[0]);
+    carregarAtendimentoReal(DB.contratos[0]);
+  }catch(e){
+    state.loginErro = 'Falha de conexão com o servidor. Tente novamente.';
+    state.loginLoading = false;
+    render();
+  }
+}
+/* Busca o historico real de CA_EvolucaoObra__c do empreendimento (via proxy) e
+   substitui o bloco "obra" mockado do contrato pelo dado de verdade. Roda em
+   paralelo depois do login, sem travar a entrada no app - a aba Obra so' mostra
+   "carregando" se o usuario chegar la antes da resposta voltar. */
+async function carregarObraReal(contrato){
+  if(!contrato.oportunidadeId) return;
+  contrato.obra.carregando = true;
+  if(state.tab==='obra' || state.tab==='inicio') render();
+  try{
+    const resp = await fetch(BUYERCARE_API_BASE + '/api/obra', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({oportunidadeId: contrato.oportunidadeId})
+    });
+    const dados = await resp.json();
+    if(!resp.ok || dados.erro){ contrato.obra.carregando = false; return; }
+
+    contrato.obra.real = true;
+    contrato.obra.percentualGeral = Math.round(dados.percentualGeral || 0);
+    contrato.obra.previsao = dados.dataEntregaPrevista
+      ? 'Conclusão da obra prevista para '+formatarDataMesAno(dados.dataEntregaPrevista)
+      : (dados.etapaAtual? 'Etapa atual: '+dados.etapaAtual : 'Ainda sem previsão cadastrada');
+    contrato.obra.etapas = [];
+    contrato.obra.comunicados = (dados.atualizacoes||[]).map(a=>({
+      data: formatarDataBr(a.data),
+      etapa: a.etapa,
+      titulo: 'Atualização: '+a.etapa+' · '+Math.round(a.percentual||0)+'%',
+      resumo: a.observacoes || 'Avanço registrado pelo time de obra.'
+    }));
+  }catch(e){
+    // mantem o que ja tinha (mock) se a rede falhar - nao quebra a tela
+  }
+  contrato.obra.carregando = false;
+  if(state.tab==='obra' || state.tab==='inicio') render();
+}
+function formatarDataBr(iso){
+  if(!iso) return '';
+  const [y,m,d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+function formatarDataMesAno(iso){
+  if(!iso) return '';
+  const meses = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  const [y,m] = iso.split('-');
+  return meses[parseInt(m,10)-1]+'/'+y;
+}
+/* Busca o plano de pagamento real (SerieFluxoPagamento__c, via proxy) e expande
+   cada serie (ex: "Parcelas Mensais" 48x) em parcelas individuais com data de
+   vencimento calculada. O status de cada parcela e' honesto: so' compara a data
+   de vencimento com hoje ("A vencer" / "Vencimento passado") - nunca afirma que
+   uma parcela foi paga ou nao, porque isso nao esta' integrado na org ainda
+   (nao existe registro de boleto/pagamento real pra confirmar). */
+async function carregarFinanceiroReal(contrato){
+  if(!contrato.oportunidadeId) return;
+  try{
+    const resp = await fetch(BUYERCARE_API_BASE + '/api/financeiro', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({oportunidadeId: contrato.oportunidadeId})
+    });
+    const dados = await resp.json();
+    if(!resp.ok || dados.erro || !Array.isArray(dados.series)) return;
+
+    const hoje = new Date(); hoje.setHours(0,0,0,0);
+    const parcelas = [];
+    let seq = 0;
+    for(const s of dados.series){
+      const [y,m,d] = (s.primeiroVencimento||'').split('-').map(n=>parseInt(n,10));
+      for(let i=0;i<(s.parcelas||0);i++){
+        seq++;
+        const venc = new Date(Date.UTC(y, (m-1)+i, d));
+        const vencIso = venc.toISOString().slice(0,10);
+        parcelas.push({
+          id:'real-'+seq,
+          desc: s.serie+' '+(i+1)+'/'+s.parcelas,
+          valor: s.valorParcela,
+          vencimento: formatarDataBr(vencIso),
+          status: venc < hoje ? 'Vencimento passado' : 'A vencer'
+        });
+      }
+    }
+    contrato.parcelas = parcelas;
+    contrato.financeiroReal = true;
+    const indexadores = [...new Set(dados.series.map(s=>s.indexador).filter(Boolean))];
+    contrato.incc = {
+      ultimoReajuste: '—',
+      dataReajuste: null,
+      indice: indexadores.length? indexadores.join(', ') : 'Sem indexador'
+    };
+    if(dados.valorTotalContrato) contrato.contrato.valor = dados.valorTotalContrato;
+    if(state.tab==='financeiro' || state.tab==='inicio') render();
+  }catch(e){
+    // mantem o mock se a rede falhar - nao quebra a tela
+  }
+}
+/* Busca os documentos reais que o cliente RECEBEU da Codeart (hoje: so' o PDF do
+   contrato assinado, anexado ao Contract) - nao e' o checklist que o corretor usa
+   pra coletar RG/CPF/comprovantes do lead antes da venda (esse e' outro conceito,
+   do CodeChave, e nao faz sentido aqui: o cliente do BuyerCare ja' comprou). Se a
+   org um dia tiver "manual do proprietario" ou outros documentos anexados ao
+   Contract, eles aparecem aqui automaticamente - nao inventamos placeholder pros
+   que ainda nao existem. */
+async function carregarDocumentosReal(contrato){
+  if(!contrato.oportunidadeId) return;
+  try{
+    const resp = await fetch(BUYERCARE_API_BASE + '/api/documentos', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({oportunidadeId: contrato.oportunidadeId})
+    });
+    const dados = await resp.json();
+    if(!resp.ok || dados.erro || !Array.isArray(dados.documentos)) return;
+
+    contrato.documentos = dados.documentos;
+    contrato.documentosReal = true;
+    if(state.tab==='documentos' || state.tab==='inicio') render();
+  }catch(e){
+    // mantem o mock se a rede falhar - nao quebra a tela
+  }
+}
+async function baixarDocumentoReal(contentVersionId){
+  const c = contratoAtivo();
+  const doc = c.documentos.find(d=>d.contentVersionId===contentVersionId);
+  const nomeArquivo = doc? doc.nome : 'documento';
+  const tipoArquivo = doc? doc.tipoArquivo : '';
+  toast('Baixando documento...');
+  try{
+    const resp = await fetch(BUYERCARE_API_BASE + '/api/documento-arquivo', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({oportunidadeId: c.oportunidadeId, contentVersionId})
+    });
+    const dados = await resp.json();
+    if(!resp.ok || dados.erro || !dados.conteudoBase64){
+      toast('Não foi possível baixar o documento.');
+      return;
+    }
+    const mime = {PDF:'application/pdf', JPG:'image/jpeg', JPEG:'image/jpeg', PNG:'image/png'}[(dados.tipoArquivo||'').toUpperCase()] || 'application/octet-stream';
+    const bytes = atob(dados.conteudoBase64);
+    const arr = new Uint8Array(bytes.length);
+    for(let i=0;i<bytes.length;i++) arr[i] = bytes.charCodeAt(i);
+    const blob = new Blob([arr], {type: mime});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = nomeArquivo + (tipoArquivo? '.'+tipoArquivo.toLowerCase() : '');
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 4000);
+  }catch(e){
+    toast('Falha de conexão ao baixar o documento.');
+  }
+}
+/* Busca as solicitacoes reais de assistencia tecnica (Case, RecordType
+   CA_AssistenciaTecnica) do cliente, via proxy. */
+async function carregarAtendimentoReal(contrato){
+  if(!contrato.oportunidadeId) return;
+  try{
+    const resp = await fetch(BUYERCARE_API_BASE + '/api/atendimento', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({oportunidadeId: contrato.oportunidadeId})
+    });
+    const dados = await resp.json();
+    if(!resp.ok || dados.erro || !Array.isArray(dados.atendimentos)) return;
+
+    contrato.atendimentos = dados.atendimentos;
+    contrato.atendimentoReal = true;
+    if(state.tab==='atendimento') render();
+  }catch(e){
+    // mantem o mock se a rede falhar - nao quebra a tela
+  }
+}
+async function salvarNovoAtendimentoReal(categoria, ambiente, descricao){
+  const c = contratoAtivo();
+  try{
+    const resp = await fetch(BUYERCARE_API_BASE + '/api/atendimento-novo', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({oportunidadeId: c.oportunidadeId, categoria, ambiente, descricao})
+    });
+    const dados = await resp.json();
+    if(!resp.ok || dados.erro || !dados.protocolo){
+      toast('Não foi possível registrar a solicitação.');
+      return;
+    }
+    toast('Solicitação '+dados.protocolo+' registrada');
+    resetTabTo('atendimentoList');
+    await carregarAtendimentoReal(c);
+    render();
+  }catch(e){
+    toast('Falha de conexão ao registrar a solicitação.');
+  }
+}
+function doLogout(){
+  state.tab = 'inicio';
+  state.contratoAtivo = 'c1';
+  state.stacks = {
+    inicio:[{screen:'inicio'}], financeiro:[{screen:'financeiroList'}], documentos:[{screen:'documentosList'}],
+    obra:[{screen:'obraDetail'}], atendimento:[{screen:'atendimentoList'}],
+  };
+  state.mode = 'login';
+  state.loginLoading = false;
+  render({resetScroll:true});
+}
+
+/* ---------- Inicio / Minha Jornada ---------- */
+function screenInicio(){
+  const c = contratoAtivo();
+  const j = c.jornada;
+  const action = `<button class="iconbtn" onclick="doLogout()" aria-label="Sair">${I.logout}</button>`;
+  const etapaAtualIdx = j.etapas.findIndex(e=>e.status==='atual');
+  // prioriza a proxima parcela genuinamente futura ("A vencer") - com dado real,
+  // a 1a parcela sem status "Pago" pode ser o Ato ja' com data passada, o que
+  // confundiria o cliente vendo isso como "a proxima a vencer"
+  const proxParcela = c.parcelas.find(p=>p.status==='A vencer') || c.parcelas.find(p=>p.status!=='Pago');
+  const atrasadas = c.parcelas.filter(p=>p.status==='Atrasado');
+  const vencidaSemConfirmacao = c.financeiroReal && c.parcelas.find(p=>p.status==='Vencimento passado');
+  const docsPend = c.documentosReal ? [] : c.documentos.filter(d=>d.status==='Pendente');
+  const docsPendentes = docsPend.length;
+  const docsDisponiveis = c.documentosReal ? c.documentos.length : 0;
+  const temMultiplasUnidades = DB.contratos.length>1;
+  const statTile = (icon, cor, valor, label, aba) => `
+    <div class="stat-tile" onclick="switchTab('${aba}')" style="cursor:pointer;">
+      <div class="stat-ic" style="width:30px; height:30px; border-radius:9px; display:flex; align-items:center; justify-content:center; background:color-mix(in srgb, ${cor} 16%, transparent); color:${cor}; margin-bottom:8px;">${icon}</div>
+      <div class="n mono" style="font-size:17px;">${valor}</div>
+      <div class="l">${label}</div>
+    </div>`;
+  const body = `
+    <div class="hero-panel">
+      <div style="display:flex; align-items:center; gap:14px;">
+        <div class="hero-ring" style="--pct:${c.obra.percentualGeral};">
+          <span>${c.obra.percentualGeral}%</span>
+        </div>
+        <div style="flex:1; min-width:0;">
+          <p class="eyebrow" style="color:var(--chrome-text-muted); margin:0;">Olá, ${DB.comprador.nome.split(' ')[0]}</p>
+          <h2 style="color:var(--chrome-text); margin:4px 0 6px; font-size:19px;">${c.contrato.empreendimento} · ${c.contrato.unidade}</h2>
+          <p style="color:var(--chrome-text-muted); font-size:12.5px; margin:0;">Você está na etapa <b style="color:var(--chrome-accent);">${j.etapas[etapaAtualIdx].nome}</b> · ${j.previsao}</p>
+        </div>
+      </div>
+      ${temMultiplasUnidades? `
+        <button class="unit-switch" onclick="go('selecionarUnidade')">
+          ${I.building} Ver outros imóveis (${DB.contratos.length}) ${I.chevron}
+        </button>
+      ` : ''}
+    </div>
+
+    <div class="stats-row" style="margin-bottom:18px;">
+      ${statTile(I.building, '#c79400', c.obra.percentualGeral+'%', 'Obra concluída', 'obra')}
+      ${statTile(I.wallet, 'var(--status-available)', proxParcela?brl(proxParcela.valor):'—', proxParcela? 'Vence '+proxParcela.vencimento : 'Tudo em dia', 'financeiro')}
+      ${c.documentosReal
+        ? statTile(I.contract, 'var(--chrome-accent)', docsDisponiveis, 'Doc'+(docsDisponiveis===1?'':'s')+' disponível'+(docsDisponiveis===1?'':'eis'), 'documentos')
+        : statTile(I.contract, 'var(--chrome-accent)', docsPendentes, 'Doc'+(docsPendentes===1?'':'s')+' pendente'+(docsPendentes===1?'':'s'), 'documentos')}
+    </div>
+
+    ${atrasadas.length? `
+      <div class="alert-card">
+        ${I.alert}
+        <div>
+          <b>Parcela em atraso</b>
+          <div class="muted" style="font-size:12px; margin-top:2px;">${atrasadas.map(p=>`<b>${p.desc}</b> (${brl(p.valor)}, venceu em ${p.vencimento})`).join(', ')}. Regularize para evitar juros e manter o financiamento em dia.</div>
+        </div>
+      </div>
+    ` : vencidaSemConfirmacao? `
+      <div class="alert-card warn">
+        ${I.alert}
+        <div>
+          <b>Parcela com vencimento em ${vencidaSemConfirmacao.vencimento}</b>
+          <div class="muted" style="font-size:12px; margin-top:2px;">${vencidaSemConfirmacao.desc} · ${brl(vencidaSemConfirmacao.valor)}. Se você já pagou, pode ignorar este aviso — a confirmação automática ainda não está disponível aqui.</div>
+        </div>
+      </div>
+    ` : docsPend.length? `
+      <div class="alert-card warn">
+        ${I.alert}
+        <div>
+          <b>Próxima atividade necessária para avançar</b>
+          <div class="muted" style="font-size:12px; margin-top:2px;">Enviar ${docsPend.map(d=>`<b>${d.nome}</b>`).join(', ')} para seguir com a revisão cadastral. <span style="font-weight:600;">Responsável: Você.</span></div>
+        </div>
+      </div>
+    ` : `
+      <div class="alert-card success">
+        ${I.check}
+        <div>
+          <b>Nenhuma pendência no momento</b>
+          <div class="muted" style="font-size:12px; margin-top:2px;">Você está em dia com a Codeart. Assim que surgir algo novo, avisamos por aqui.</div>
+        </div>
+      </div>
+    `}
+
+    <div class="section-title">Sua jornada</div>
+    <div class="timeline">
+      ${j.etapas.map((e,i)=>`
+        <div class="tl-item">
+          <div class="tl-dot-wrap">
+            <div class="tl-dot ${e.status==='concluida'?'done':''} ${e.status==='atual'?'current':''}">${e.status==='concluida'?'<span style="color:#fff; display:flex;">'+I.check.replace('width="17" height="17"','width="9" height="9"')+'</span>':''}</div>
+            <div class="tl-line ${e.status==='concluida'?'done':''}"></div>
+          </div>
+          <div class="tl-body ${e.status==='atual'?'current':''}">
+            <b>${e.nome}</b>
+            <span>${e.status==='concluida'?'Concluída':e.status==='atual'?'Em andamento':'Ainda não iniciada'}</span>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+
+    <div class="section-title">Atalhos</div>
+    <div class="quick-actions">
+      <div class="quick-btn" onclick="switchTab('financeiro')">
+        <div class="ic" style="background:color-mix(in srgb, var(--status-available) 16%, transparent); color:var(--status-available);">${I.wallet}</div>
+        <b>2ª via de boleto</b>
+      </div>
+      <div class="quick-btn" onclick="switchTab('documentos')">
+        <div class="ic" style="background:color-mix(in srgb, var(--chrome-accent) 16%, transparent); color:var(--chrome-accent);">${I.contract}</div>
+        <b>Meus documentos</b>
+      </div>
+      <div class="quick-btn" onclick="switchTab('obra')">
+        <div class="ic" style="background:color-mix(in srgb, var(--sun) 22%, transparent); color:#8a6c00;">${I.building}</div>
+        <b>Evolução da obra</b>
+      </div>
+      <div class="quick-btn" onclick="switchTab('atendimento')">
+        <div class="ic" style="background:color-mix(in srgb, var(--status-reserved) 18%, transparent); color:var(--status-reserved);">${I.wrench}</div>
+        <b>Abrir atendimento</b>
+      </div>
+    </div>
+  `;
+  return {title:'Início', back:false, action, body};
+}
+
+/* ---------- Financeiro ---------- */
+function toggleFinanceiroExpandido(){
+  state.financeiroExpandido = !state.financeiroExpandido;
+  render();
+}
+function screenFinanceiroList(){
+  const c = contratoAtivo();
+  const parcelas = c.parcelas;
+  const badgeCls = st => st==='Pago'?'badge-available':st==='Atrasado'?'badge-sold':st==='Vencimento passado'?'badge-reserved':st==='A vencer'?'badge-blue':'badge-reserved';
+  const vencidas = parcelas.filter(p=>p.status==='Vencimento passado' || p.status==='Atrasado');
+  const statsRow = c.financeiroReal ? `
+    <div class="stats-row" style="margin-bottom:18px;">
+      <div class="stat-tile"><div class="n mono">${parcelas.length}</div><div class="l">Parcelas no plano</div></div>
+      <div class="stat-tile"><div class="n mono" style="font-size:15px;">${brl(c.contrato.valor)}</div><div class="l">Valor total do contrato</div></div>
+      <div class="stat-tile"><div class="n mono">${c.incc.indice}</div><div class="l">Indexador</div></div>
+    </div>
+    <div class="alert-card info" style="margin-bottom:14px;">
+      ${I.alert}
+      <div><b>Status por data, não por pagamento</b><div class="muted" style="font-size:12px; margin-top:2px;">"A vencer" / "Vencimento passado" é calculado pela data prevista — a confirmação de boleto pago ainda não está integrada aqui. Fale com seu consultor pra confirmar um pagamento.</div></div>
+    </div>
+  ` : `
+    <div class="stats-row" style="margin-bottom:18px;">
+      <div class="stat-tile"><div class="n mono">${parcelas.filter(p=>p.status==='Pago').length}/${parcelas.length}</div><div class="l">Parcelas pagas</div></div>
+      <div class="stat-tile"><div class="n mono">${brl(parcelas.filter(p=>p.status==='Pago').reduce((s,p)=>s+p.valor,0))}</div><div class="l">Total quitado</div></div>
+      <div class="stat-tile"><div class="n mono">${c.incc.ultimoReajuste}</div><div class="l">${c.incc.indice}</div></div>
+    </div>
+    ${vencidas.length? `
+      <div class="alert-card">
+        ${I.alert}
+        <div><b>${vencidas.length} parcela${vencidas.length>1?'s':''} em atraso</b><div class="muted" style="font-size:12px; margin-top:2px;">Regularize para evitar juros e manter o financiamento em dia.</div></div>
+      </div>
+    ` : ''}
+  `;
+  const LIMITE_VISIVEL = 4;
+  const mostrarTodas = state.financeiroExpandido || parcelas.length <= LIMITE_VISIVEL;
+  const visiveis = mostrarTodas ? parcelas : parcelas.slice(0, LIMITE_VISIVEL);
+  const ocultas = parcelas.length - visiveis.length;
+  const linhaParcela = p => `
+        <div class="list-card" onclick="go('parcelaDetail',{id:'${p.id}'})">
+          <div class="avatar icon">${I.wallet}</div>
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:600; font-size:13.5px;">${p.desc}</div>
+            <div class="muted" style="font-size:11.5px;">Vencimento ${p.vencimento}</div>
+          </div>
+          <div style="text-align:right; flex:0 0 auto;">
+            <div class="mono" style="font-weight:700; font-size:13px;">${brl(p.valor)}</div>
+            <span class="badge ${badgeCls(p.status)}" style="margin-top:3px;">${p.status}</span>
+          </div>
+        </div>`;
+  const body = `
+    ${statsRow}
+
+    <div class="section-title">
+      <span>Parcelas</span>
+      <button class="btn-ghost" style="padding:0; font-size:12.5px;" onclick="go('extrato')">Ver extrato completo</button>
+    </div>
+    <div class="stack">
+      ${visiveis.map(linhaParcela).join('')}
+    </div>
+    ${ocultas>0? `
+      <button class="btn btn-secondary" style="margin-top:10px;" onclick="toggleFinanceiroExpandido()">
+        Ver mais ${ocultas} parcela${ocultas>1?'s':''} ${I.chevron}
+      </button>
+    ` : mostrarTodas && parcelas.length>LIMITE_VISIVEL? `
+      <button class="btn btn-secondary" style="margin-top:10px;" onclick="toggleFinanceiroExpandido()">Recolher</button>
+    ` : ''}
+
+    <div class="section-title">Precisa de ajuda com o financeiro?</div>
+    <button class="btn btn-secondary" onclick="go('solicitacaoFinanceira')">${I.mail} Abrir solicitação para o financeiro</button>
+  `;
+  return {title:'Central Financeira', back:false, body};
+}
+function screenParcelaDetail({id}){
+  const c = contratoAtivo();
+  const p = c.parcelas.find(x=>x.id===id);
+  const badgeCls = st => st==='Pago'?'badge-available':st==='Atrasado'?'badge-sold':st==='Vencimento passado'?'badge-reserved':st==='A vencer'?'badge-blue':'badge-reserved';
+  const body = `
+    <div class="price-hero">
+      <div class="label">${p.desc}</div>
+      <div class="amount">${brl(p.valor)}</div>
+    </div>
+    <div class="kv-table">
+      <div class="kv-row"><span class="k">Vencimento</span><span class="v">${p.vencimento}</span></div>
+      <div class="kv-row"><span class="k">Status</span><span class="v"><span class="badge ${badgeCls(p.status)}">${p.status}</span></span></div>
+      <div class="kv-row"><span class="k">Índice de reajuste</span><span class="v">${c.incc.indice}</span></div>
+    </div>
+    <div style="margin-top:18px;">
+      <button class="btn btn-primary" onclick="toast('2ª via gerada e enviada para o seu e-mail')">${I.download} Emitir 2ª via do boleto</button>
+    </div>
+    ${p.status!=='Pago'? `<div style="margin-top:10px;"><button class="btn btn-secondary" onclick="go('solicitacaoFinanceira',{parcelaId:'${p.id}'})">Contestar valor / abrir solicitação</button></div>`:''}
+  `;
+  return {title:'Detalhe da parcela', back:true, body};
+}
+function screenExtrato(){
+  const c = contratoAtivo();
+  const body = `
+    <p class="muted" style="margin-top:0;">Extrato completo do contrato ${c.contrato.unidade} — ${c.contrato.empreendimento}.</p>
+    <div class="stack">
+      ${c.parcelas.map(p=>`
+        <div class="kv-row card" style="padding:11px 14px;">
+          <span class="k">${p.desc} · ${p.vencimento}</span>
+          <span class="v">${brl(p.valor)}</span>
+        </div>
+      `).join('')}
+    </div>
+    <div style="margin-top:18px;">
+      <button class="btn btn-secondary" onclick="toast('Extrato em PDF enviado para o seu e-mail')">${I.download} Baixar extrato em PDF</button>
+    </div>
+  `;
+  return {title:'Extrato financeiro', back:true, body};
+}
+function screenSolicitacaoFinanceira(){
+  const body = `
+    <p class="muted" style="margin-top:0;">Conte pra gente o que você precisa — a equipe financeira responde por aqui mesmo.</p>
+    <div class="field">
+      <label>Assunto</label>
+      <select id="sf-assunto">
+        <option>Divergência de valor</option>
+        <option>Dúvida sobre reajuste</option>
+        <option>Renegociação de parcela</option>
+        <option>Outro</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Descreva sua solicitação</label>
+      <textarea id="sf-desc" placeholder="Ex: o valor da parcela de setembro veio diferente do combinado..."></textarea>
+    </div>
+    <button class="btn btn-primary" onclick="toast('Solicitação enviada ao financeiro'); goBack();">Enviar solicitação</button>
+  `;
+  return {title:'Solicitação financeira', back:true, body};
+}
+
+/* ---------- Documentos ---------- */
+function tamanhoLegivel(bytes){
+  if(!bytes) return '';
+  if(bytes < 1024*1024) return Math.round(bytes/1024)+' KB';
+  return (bytes/(1024*1024)).toFixed(1)+' MB';
+}
+function screenDocumentosList(){
+  const c = contratoAtivo();
+  if(c.documentosReal){
+    const docs = c.documentos;
+    const body = `
+      <p class="muted" style="margin-top:0;">Documentos que você recebeu da Codeart sobre esta unidade.</p>
+      ${docs.length? `
+        <div class="stack">
+          ${docs.map(d=>`
+            <div class="list-card" onclick="baixarDocumentoReal('${d.contentVersionId}')">
+              <div class="avatar icon">${I.emptyDoc}</div>
+              <div style="flex:1; min-width:0;">
+                <div style="font-weight:600; font-size:13.5px;">${d.nome}</div>
+                <div class="muted" style="font-size:11.5px;">${d.categoria} · ${d.tipoArquivo} · ${tamanhoLegivel(d.tamanhoBytes)}</div>
+              </div>
+              <span style="color:var(--accent); flex:0 0 auto;">${I.download}</span>
+            </div>
+          `).join('')}
+        </div>
+      ` : `<div class="empty">${I.emptyDoc}<p>Nenhum documento disponível ainda. Assim que a Codeart anexar algo ao seu contrato (ex: manual do proprietário), aparece aqui automaticamente.</p></div>`}
+      <div class="alert-card info" style="margin-top:18px;">
+        ${I.alert}
+        <div><b>Ainda não temos tudo por aqui</b><div class="muted" style="font-size:12px; margin-top:2px;">Hoje só o contrato assinado está disponível no app. Manual do proprietário e outros materiais chegam em breve — enquanto isso, fale com seu consultor se precisar de algo específico.</div></div>
+      </div>
+    `;
+    return {title:'Meus documentos', back:false, body};
+  }
+
+  const badgeCls = st => st==='Aprovado'?'badge-available':st==='Pendente'?'badge-reserved':st==='Em análise'?'badge-blue':'badge-sold';
+  const pendentes = c.documentos.filter(d=>d.status==='Pendente').length;
+  const body = `
+    ${pendentes? `
+      <div class="alert-card warn">
+        ${I.alert}
+        <div><b>${pendentes} documento${pendentes>1?'s':''} pendente${pendentes>1?'s':''}</b><div class="muted" style="font-size:12px; margin-top:2px;">Envie o quanto antes para não atrasar a análise do financiamento.</div></div>
+      </div>
+    ` : ''}
+    <div class="stack">
+      ${c.documentos.map(d=>`
+        <div class="list-card" onclick="go('documentoDetail',{nome:'${d.nome}'})">
+          <div class="avatar icon">${I.emptyDoc}</div>
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:600; font-size:13.5px;">${d.nome}</div>
+            <div class="muted" style="font-size:11.5px;">${d.arquivoNome || (d.status==='Pendente'? 'Ainda não enviado' : d.tipo)}</div>
+          </div>
+          <span class="badge ${badgeCls(d.status)}">${d.status}</span>
+        </div>
+      `).join('')}
+    </div>
+  `;
+  return {title:'Documentos e contratos', back:false, body};
+}
+function screenDocumentoDetail({nome}){
+  const d = contratoAtivo().documentos.find(x=>x.nome===nome);
+  const badgeCls = st => st==='Aprovado'?'badge-available':st==='Pendente'?'badge-reserved':st==='Em análise'?'badge-blue':'badge-sold';
+  const body = `
+    <div class="kv-table">
+      <div class="kv-row"><span class="k">Tipo</span><span class="v">${d.tipo}</span></div>
+      <div class="kv-row"><span class="k">Status</span><span class="v"><span class="badge ${badgeCls(d.status)}">${d.status}</span></span></div>
+      ${d.arquivoNome? `<div class="kv-row"><span class="k">Arquivo enviado</span><span class="v">${d.arquivoNome}</span></div>` : ''}
+      ${d.confianca!=null? `<div class="kv-row"><span class="k">Confiança da análise</span><span class="v">${d.confianca}%</span></div>` : ''}
+    </div>
+    ${d.status==='Aprovado' ? `
+      <div style="margin-top:18px;"><button class="btn btn-secondary" onclick="toast('Download iniciado')">${I.download} Baixar documento</button></div>
+    ` : d.status==='Pendente' ? `
+      <div class="alert-card warn" style="margin-top:18px;">${I.alert}<div><b>Envio necessário</b><div class="muted" style="font-size:12px; margin-top:2px;">Este documento ainda não foi enviado.</div></div></div>
+      <button class="btn btn-primary" onclick="d_marcarEnviado('${d.nome}')">${I.camera} Enviar documento</button>
+    ` : `
+      <div class="alert-card info" style="margin-top:18px;">${I.alert}<div><b>${d.status}</b><div class="muted" style="font-size:12px; margin-top:2px;">Assim que disponível, você recebe uma notificação aqui.</div></div></div>
+    `}
+  `;
+  return {title:d.nome, back:true, body};
+}
+function d_marcarEnviado(nome){
+  const d = contratoAtivo().documentos.find(x=>x.nome===nome);
+  if(d){ d.status='Em análise'; }
+  toast('Documento enviado para análise');
+  render();
+}
+
+/* ---------- Obra ---------- */
+function obraSvgPlaceholder(label){
+  return `<svg viewBox="0 0 400 250" preserveAspectRatio="xMidYMid slice">
+    <rect width="400" height="250" fill="#303e47"/>
+    <rect x="40" y="60" width="60" height="150" fill="#416072"/>
+    <rect x="115" y="30" width="60" height="180" fill="#4a6f83"/>
+    <rect x="190" y="80" width="60" height="130" fill="#416072"/>
+    <rect x="265" y="10" width="60" height="200" fill="#4a6f83"/>
+    <text x="200" y="235" fill="#f2f2f2" font-size="13" font-family="sans-serif" text-anchor="middle" opacity=".7">${label}</text>
+  </svg>`;
+}
+/* Ilustracoes vetoriais por etapa real da obra (sem foto de verdade ainda - isso
+   e' so' uma ilustracao estilizada, nunca deve ser confundido com uma foto real do
+   canteiro). Uma pra cada valor do picklist CA_EvolucaoObra__c.CA_Etapa__c. */
+function obraIlustracaoEtapa(etapa){
+  const moldura = (conteudo) => `<svg viewBox="0 0 400 250" preserveAspectRatio="xMidYMid slice">
+    <rect width="400" height="250" fill="#2a343c"/>${conteudo}
+    <text x="14" y="232" fill="#f2f2f2" font-size="11" font-family="sans-serif" opacity=".55">Ilustração · não é foto real do canteiro</text>
+  </svg>`;
+
+  const porEtapa = {
+    'Fundação': `
+      <rect x="0" y="150" width="400" height="100" fill="#4a3a2a"/>
+      <g stroke="#f2f2f2" stroke-width="2" opacity=".4">
+        ${[0,40,80,120,160,200,240,280,320,360].map(x=>`<line x1="${x}" y1="150" x2="${x}" y2="250"/>`).join('')}
+        ${[160,185,210].map(y=>`<line x1="0" y1="${y}" x2="400" y2="${y}"/>`).join('')}
+      </g>
+      <rect x="30" y="60" width="18" height="95" fill="#6cc0ed"/>
+      <rect x="10" y="40" width="130" height="24" rx="4" fill="#6cc0ed"/>
+      <rect x="120" y="100" width="55" height="8" fill="#303e47"/>`,
+    'Estrutura': `
+      <rect x="40" y="60" width="34" height="170" fill="#416072"/>
+      <rect x="120" y="40" width="34" height="190" fill="#4a6f83"/>
+      <rect x="200" y="60" width="34" height="170" fill="#416072"/>
+      <rect x="280" y="30" width="34" height="200" fill="#4a6f83"/>
+      <rect x="20" y="95" width="320" height="14" fill="#2a343c"/>
+      <rect x="20" y="160" width="320" height="14" fill="#2a343c"/>`,
+    'Alvenaria': `
+      ${Array.from({length:6}).map((_,row)=>{
+        const y = 50+row*32, offset = row%2? 0 : 20;
+        return Array.from({length:10}).map((_,col)=>
+          `<rect x="${offset+col*40-20}" y="${y}" width="38" height="28" fill="${(row+col)%2?'#9c6b4a':'#b17e58'}" stroke="#2a343c" stroke-width="2"/>`
+        ).join('');
+      }).join('')}`,
+    'Instalações': `
+      <rect width="400" height="250" fill="#2f3a42"/>
+      <g stroke="#6cc0ed" stroke-width="5" fill="none" opacity=".85">
+        <path d="M20 200 H160 V80 H340"/>
+        <path d="M60 230 V140 H260 V60"/>
+      </g>
+      <g fill="#fed600">
+        <circle cx="160" cy="80" r="7"/><circle cx="260" cy="60" r="7"/><circle cx="340" cy="80" r="7"/>
+      </g>
+      <rect x="150" y="170" width="60" height="40" rx="6" fill="#416072"/>
+      <rect x="165" y="180" width="30" height="10" fill="#fed600"/>`,
+    'Acabamento': `
+      <rect width="400" height="250" fill="#e8e2d6"/>
+      <rect x="0" y="0" width="400" height="130" fill="#c9bfa8"/>
+      <rect x="250" y="40" width="18" height="150" fill="#416072"/>
+      <rect x="225" y="25" width="68" height="28" rx="6" fill="#416072"/>
+      <path d="M50 150 q60 -30 120 0 t120 0 t60 -15" stroke="#6cc0ed" stroke-width="10" fill="none" opacity=".7"/>`,
+    'Entrega / Habite-se': `
+      <rect width="400" height="250" fill="#1f2a2f"/>
+      <rect x="110" y="40" width="180" height="190" fill="#416072"/>
+      <rect x="135" y="65" width="30" height="30" fill="#fed600" opacity=".85"/>
+      <rect x="185" y="65" width="30" height="30" fill="#fed600" opacity=".85"/>
+      <rect x="235" y="65" width="30" height="30" fill="#fed600" opacity=".85"/>
+      <rect x="135" y="115" width="30" height="30" fill="#fed600" opacity=".6"/>
+      <rect x="185" y="115" width="30" height="30" fill="#fed600" opacity=".6"/>
+      <rect x="235" y="115" width="30" height="30" fill="#fed600" opacity=".6"/>
+      <rect x="175" y="170" width="50" height="60" fill="#2a343c"/>
+      <circle cx="330" cy="70" r="34" fill="#257a4c"/>
+      <path d="M315 70 l11 11 22 -22" stroke="#fff" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`
+  };
+  return moldura(porEtapa[etapa] || porEtapa['Estrutura']);
+}
+function screenObraDetail(){
+  const o = contratoAtivo().obra;
+  const action = `<button class="iconbtn" onclick="toast('Notificações de obra ativadas')" aria-label="Notificações"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg></button>`;
+  const body = `
+    <div class="hero-panel">
+      <p class="eyebrow" style="color:var(--chrome-text-muted);">Evolução geral</p>
+      <h2 style="color:var(--chrome-text); font-size:32px; margin:4px 0 10px; font-family:'IBM Plex Mono';">${o.percentualGeral}%</h2>
+      <div class="progressbar" style="background:rgba(255,255,255,.15);"><i style="width:${o.percentualGeral}%; background:var(--chrome-accent);"></i></div>
+      <p style="color:var(--chrome-text-muted); font-size:12px; margin:10px 0 0;">${o.carregando? 'Atualizando dados da obra...' : o.previsao}</p>
+    </div>
+
+    ${o.etapas.length? `
+    <div class="section-title">Etapas da obra</div>
+    ${o.etapas.map(e=>`
+      <div class="obra-etapa">
+        <div class="row"><span>${e.nome}</span><span>${e.pct}%</span></div>
+        <div class="progressbar"><i style="width:${e.pct}%;"></i></div>
+      </div>
+    `).join('')}
+    ` : ''}
+
+    <div class="section-title">${o.real? 'Histórico de atualizações' : 'Comunicados e fotos'}</div>
+    ${o.comunicados.length? `
+    <div class="stack">
+      ${o.comunicados.map((com,i)=>`
+        <div class="card" style="padding:0; overflow:hidden;">
+          <div class="obra-photo"><span class="tag">${com.data}</span>${com.etapa? obraIlustracaoEtapa(com.etapa) : obraSvgPlaceholder('Foto ilustrativa da obra')}</div>
+          <div style="padding:12px 14px;">
+            <b style="font-size:13.5px;">${com.titulo}</b>
+            <p class="muted" style="font-size:12.5px; margin:4px 0 0;">${com.resumo}</p>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+    ` : `<div class="empty">${I.building}<p>A obra desta unidade ainda não começou — os comunicados aparecerão aqui assim que houver novidades.</p></div>`}
+  `;
+  return {title:'Evolução da obra', back:false, action, body};
+}
+
+/* ---------- Atendimento ---------- */
+function screenAtendimentoList(){
+  const c = contratoAtivo();
+  const badgeCls = st => st==='Concluído'?'badge-available':st==='Em andamento'?'badge-reserved':'badge-blue';
+  const chaveDetalhe = a => c.atendimentoReal ? a.protocolo : a.id;
+  const linhaSub = a => c.atendimentoReal ? (a.categoria+' · '+formatarDataBr((a.abertoEm||'').slice(0,10))) : (a.protocolo+' · '+a.data);
+  const body = `
+    ${DB.contratos.length>1? `
+      <div class="list-card" style="margin-bottom:14px;" onclick="go('selecionarUnidade')">
+        <div class="avatar icon">${I.building}</div>
+        <div style="flex:1; min-width:0;">
+          <div style="font-weight:600; font-size:13.5px;">${c.contrato.empreendimento} · ${c.contrato.unidade}</div>
+          <div class="muted" style="font-size:11.5px;">Toque para ver o atendimento de outra unidade</div>
+        </div>
+        <span style="width:16px; height:16px; flex:0 0 auto; color:var(--text-muted); display:flex;">${I.chevron}</span>
+      </div>
+    ` : ''}
+    <button class="btn btn-primary" style="margin-bottom:18px;" onclick="go('novoAtendimento')">${I.wrench} Abrir nova assistência técnica</button>
+    <div class="section-title">Suas solicitações</div>
+    ${c.atendimentos.length? `
+      <div class="stack">
+        ${c.atendimentos.map(a=>`
+          <div class="list-card" onclick="go('atendimentoDetail',{id:'${chaveDetalhe(a)}'})">
+            <div class="avatar icon">${I.wrench}</div>
+            <div style="flex:1; min-width:0;">
+              <div style="font-weight:600; font-size:13.5px;">${c.atendimentoReal ? a.assunto : (a.tipo+' · '+a.ambiente)}</div>
+              <div class="muted" style="font-size:11.5px;">${linhaSub(a)}</div>
+            </div>
+            <span class="badge ${badgeCls(a.status)}">${a.status}</span>
+          </div>
+        `).join('')}
+      </div>
+    ` : `<div class="empty">${I.wrench}<p>Nenhuma solicitação aberta ainda para esta unidade.</p></div>`}
+  `;
+  return {title:'Atendimento', back:false, body};
+}
+function screenAtendimentoDetail({id}){
+  const c = contratoAtivo();
+  const badgeCls = st => st==='Concluído'?'badge-available':st==='Em andamento'?'badge-reserved':'badge-blue';
+
+  if(c.atendimentoReal){
+    const a = c.atendimentos.find(x=>x.protocolo===id);
+    const body = `
+      <div class="kv-table">
+        <div class="kv-row"><span class="k">Protocolo</span><span class="v">${a.protocolo}</span></div>
+        <div class="kv-row"><span class="k">Categoria</span><span class="v">${a.categoria}</span></div>
+        <div class="kv-row"><span class="k">Aberto em</span><span class="v">${formatarDataBr((a.abertoEm||'').slice(0,10))}</span></div>
+        <div class="kv-row"><span class="k">Status</span><span class="v"><span class="badge ${badgeCls(a.status)}">${a.status}</span></span></div>
+      </div>
+      <div class="section-title">Descrição</div>
+      <p class="muted" style="margin-top:0; white-space:pre-line;">${a.descricao}</p>
+      ${a.status==='Concluído' ? `
+        <button class="btn btn-secondary" onclick="toast('Obrigado! Avaliação enviada.')">Avaliar atendimento</button>
+      ` : `
+        <button class="btn btn-ghost" style="width:100%;" onclick="toast('Mensagem enviada para o time técnico')">Enviar mensagem sobre esta solicitação</button>
+      `}
+    `;
+    return {title:'Detalhe da solicitação', back:true, body};
+  }
+
+  const a = c.atendimentos.find(x=>x.id===id);
+  const body = `
+    <div class="kv-table">
+      <div class="kv-row"><span class="k">Protocolo</span><span class="v">${a.protocolo}</span></div>
+      <div class="kv-row"><span class="k">Tipo</span><span class="v">${a.tipo}</span></div>
+      <div class="kv-row"><span class="k">Ambiente</span><span class="v">${a.ambiente}</span></div>
+      <div class="kv-row"><span class="k">Aberto em</span><span class="v">${a.data}</span></div>
+      <div class="kv-row"><span class="k">Status</span><span class="v"><span class="badge ${badgeCls(a.status)}">${a.status}</span></span></div>
+    </div>
+    <div class="section-title">Descrição</div>
+    <p class="muted" style="margin-top:0;">${a.descricao}</p>
+    <div class="alert-card info">${I.alert}<div><b>SLA</b><div class="muted" style="font-size:12px; margin-top:2px;">${a.sla}</div></div></div>
+    ${a.status==='Concluído' ? `
+      <button class="btn btn-secondary" onclick="toast('Obrigado! Avaliação enviada.')">Avaliar atendimento</button>
+    ` : `
+      <button class="btn btn-ghost" style="width:100%;" onclick="toast('Mensagem enviada para o time técnico')">Enviar mensagem sobre esta solicitação</button>
+    `}
+  `;
+  return {title:'Detalhe da solicitação', back:true, body};
+}
+function screenNovoAtendimento(){
+  const f = state.novoAtendimento;
+  const c = contratoAtivo();
+  const body = `
+    <p class="muted" style="margin-top:0;">Empreendimento e unidade já identificados pelo seu cadastro.</p>
+    <div class="kv-table" style="margin-bottom:16px;">
+      <div class="kv-row"><span class="k">Empreendimento</span><span class="v">${c.contrato.empreendimento}</span></div>
+      <div class="kv-row"><span class="k">Unidade</span><span class="v">${c.contrato.torre} · ${c.contrato.unidade}</span></div>
+    </div>
+    <div class="field">
+      <label>Ambiente</label>
+      <input id="na-ambiente" placeholder="Ex: banheiro suíte, cozinha, sala..." value="${f.ambiente}">
+    </div>
+    <div class="field">
+      <label>Tipo de problema</label>
+      <select id="na-tipo">
+        <option ${f.tipo===''?'selected':''} disabled>Selecione...</option>
+        <option>Hidráulica</option>
+        <option>Elétrica</option>
+        <option>Estrutural/Alvenaria</option>
+        <option>Esquadrias</option>
+        <option>Acabamento</option>
+        <option>Outros</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Descreva a necessidade</label>
+      <textarea id="na-desc" placeholder="Conte com detalhes o que está acontecendo...">${f.descricao}</textarea>
+    </div>
+    <button class="btn btn-secondary" style="margin-bottom:14px;" onclick="toast('Fotos anexadas (simulação)')">${I.camera} Anexar fotos ou vídeos</button>
+    <button class="btn btn-primary" id="na-enviar" onclick="salvarNovoAtendimento()">Enviar solicitação</button>
+  `;
+  return {title:'Nova assistência técnica', back:true, body};
+}
+async function salvarNovoAtendimento(){
+  const ambiente = document.getElementById('na-ambiente').value.trim();
+  const tipoSel = document.getElementById('na-tipo');
+  const tipo = tipoSel.value || 'Outros';
+  const descricao = document.getElementById('na-desc').value.trim() || 'Sem descrição detalhada.';
+
+  const c = contratoAtivo();
+  if(c.atendimentoReal){
+    const btn = document.getElementById('na-enviar');
+    btn.disabled = true;
+    btn.textContent = 'Enviando...';
+    await salvarNovoAtendimentoReal(tipo, ambiente, descricao);
+    state.novoAtendimento = {ambiente:'', tipo:'', descricao:'', data:''};
+    return;
+  }
+
+  nextAtendimentoNum++;
+  const novo = {
+    id:'at'+Date.now(), protocolo:'AT-2026-0'+nextAtendimentoNum, tipo, ambiente: ambiente||'Não informado', descricao,
+    status:'Em andamento', sla:'Resposta em até 2 dias úteis',
+    data:new Date().toLocaleDateString('pt-BR'),
+  };
+  c.atendimentos.unshift(novo);
+  state.novoAtendimento = {ambiente:'', tipo:'', descricao:'', data:''};
+  resetTabTo('atendimentoList');
+  toast('Solicitação '+novo.protocolo+' registrada');
+}
+
+/* ---------- Agente virtual ---------- */
+const SUGESTOES = [
+  'Quando vence minha próxima parcela?',
+  'Gere a segunda via do boleto',
+  'Quais documentos ainda faltam?',
+  'Qual o andamento da obra?',
+  'Quero abrir uma assistência técnica',
+];
+function screenAgenteChat(){
+  const body = `
+    <div class="chat-wrap" id="chatWrap">
+      ${state.chat.map(m=>`<div class="chat-bubble ${m.from==='bot'?'bot':'user'}">${m.text}</div>`).join('')}
+    </div>
+    <div class="chip-row" style="margin-top:14px;">
+      ${SUGESTOES.map(s=>`<button class="chip" onclick="perguntarAgente('${s.replace(/'/g,"\\'")}')">${s}</button>`).join('')}
+    </div>
+  `;
+  const action = `<button class="iconbtn" onclick="fecharAgente()" aria-label="Fechar">${I.close}</button>`;
+  return {title:'Agente virtual', back:false, action, body};
+}
+function respostaAgente(pergunta){
+  const p = pergunta.toLowerCase();
+  const c = contratoAtivo();
+  const rotuloUnidade = DB.contratos.length>1 ? ` (${c.contrato.empreendimento} · ${c.contrato.unidade})` : '';
+  if(p.includes('próxima parcela') || p.includes('vence')){
+    const prox = c.parcelas.find(x=>x.status!=='Pago');
+    return prox ? `Sua próxima parcela em aberto${rotuloUnidade} é <b>${prox.desc}</b>, no valor de <b>${brl(prox.valor)}</b>, com vencimento em <b>${prox.vencimento}</b>.` : `Você não tem parcelas em aberto${rotuloUnidade} no momento. 🎉`;
+  }
+  if(p.includes('segunda via') || p.includes('boleto')){
+    return 'Prontinho — gerei a 2ª via da sua parcela mais próxima e enviei para o seu e-mail cadastrado.';
+  }
+  if(p.includes('documentos')){
+    const pend = c.documentos.filter(d=>d.status==='Pendente');
+    return pend.length ? `Ainda falta enviar${rotuloUnidade}: <b>${pend.map(d=>d.nome).join(', ')}</b>. Quer que eu te leve até lá?` : `Todos os seus documentos estão em dia${rotuloUnidade}. ✅`;
+  }
+  if(p.includes('obra') || p.includes('andamento')){
+    return `A obra${rotuloUnidade} está com <b>${c.obra.percentualGeral}%</b> de evolução geral, com previsão de conclusão em <b>${c.obra.previsao}</b>.`;
+  }
+  if(p.includes('vistoria')){
+    return 'A etapa de vistoria ainda não foi liberada para essa unidade — você será avisado por aqui assim que ela abrir.';
+  }
+  if(p.includes('assistência') || p.includes('assistencia')){
+    return 'Posso te levar direto para abrir uma nova assistência técnica. Toque em "Abrir atendimento" nos atalhos da tela Início, ou na aba Atendimento.';
+  }
+  if(p.includes('outro imóvel') || p.includes('outra unidade') || p.includes('trocar de unidade')){
+    return DB.contratos.length>1 ? `Você tem ${DB.contratos.length} imóveis com a Codeart. Toque em "Ver outros imóveis" na tela Início pra trocar de unidade.` : 'Você tem apenas uma unidade cadastrada no momento.';
+  }
+  return 'Entendi! Vou encaminhar essa solicitação para a equipe responsável e te aviso por aqui assim que houver uma atualização.';
+}
+function perguntarAgente(texto){
+  state.chat.push({from:'user', text:texto});
+  const resp = respostaAgente(texto);
+  state.chat.push({from:'bot', text:resp});
+  render();
+  const wrap = document.getElementById('chatWrap');
+  if(wrap) wrap.scrollIntoView({block:'end'});
+}
+
+/* ---------- registro de telas ---------- */
+const SCREENS = {
+  inicio: screenInicio,
+  financeiroList: screenFinanceiroList,
+  parcelaDetail: screenParcelaDetail,
+  extrato: screenExtrato,
+  solicitacaoFinanceira: screenSolicitacaoFinanceira,
+  documentosList: screenDocumentosList,
+  documentoDetail: screenDocumentoDetail,
+  obraDetail: screenObraDetail,
+  atendimentoList: screenAtendimentoList,
+  atendimentoDetail: screenAtendimentoDetail,
+  novoAtendimento: screenNovoAtendimento,
+  agenteChat: screenAgenteChat,
+  selecionarUnidade: screenSelecionarUnidade,
+};
+
+render();
+</script>
+
+</body></html>
