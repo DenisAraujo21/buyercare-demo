@@ -25,6 +25,8 @@
      POST /api/solicitacao-financeira Body: { "oportunidadeId": "...", "assunto": "...", "descricao": "...", "parcelaInfo": "..." }
      POST /api/agente            Body: { "oportunidadeId": "...", "mensagem": "...", "historico": [{from,text}] }
                                  (assistente virtual: Workers AI via binding "AI" + contexto real do Salesforce)
+     POST /api/pos-venda         Body: { "oportunidadeId": "...", "acao": "estado|vistoria-agendar|...", "dados": {...} }
+     POST /api/primeiro-acesso   Body: { "acao": "buscar|enviar-codigo|confirmar", cpf, nascimento, celular, desafioId, codigo }
      POST /api/push-inscricao    Body: { "oportunidadeId": "...", "endpoint": "https://...", "acao": "inscrever|cancelar" }
      POST /api/push-enviar       Body: { "token": "...", "endpoints": ["https://..."] }  (so' o Salesforce chama; devolve {enviados, gone[], falhas[]})
    Resposta: o mesmo JSON que a classe Apex correspondente devolve. */
@@ -271,6 +273,8 @@ export default {
       '/api/atendimento-novo': { apexPath: '/buyercare/atendimento-novo', camposObrigatorios: ['oportunidadeId', 'categoria', 'descricao'], camposOpcionais: ['ambiente'] },
       '/api/atendimento-anexo': { apexPath: '/buyercare/atendimento-anexo', camposObrigatorios: ['oportunidadeId', 'caseId', 'nomeArquivo', 'conteudoBase64'], camposOpcionais: ['tipoArquivo'] },
       '/api/atendimento-comentario': { apexPath: '/buyercare/atendimento-comentario', camposObrigatorios: ['oportunidadeId', 'protocolo', 'tipo'], camposOpcionais: ['texto', 'nota'] },
+      '/api/pos-venda': { apexPath: '/buyercare/pos-venda', camposObrigatorios: ['oportunidadeId', 'acao'], camposOpcionais: ['dados'] },
+      '/api/primeiro-acesso': { apexPath: '/buyercare/primeiro-acesso', camposObrigatorios: ['acao'], camposOpcionais: ['cpf', 'nascimento', 'celular', 'desafioId', 'codigo'] },
       '/api/push-inscricao': { apexPath: '/buyercare/push-inscricao', camposObrigatorios: ['oportunidadeId', 'endpoint', 'acao'] },
       '/api/solicitacao-financeira': { apexPath: '/buyercare/solicitacao-financeira', camposObrigatorios: ['oportunidadeId', 'assunto', 'descricao'], camposOpcionais: ['parcelaInfo'] }
     };
