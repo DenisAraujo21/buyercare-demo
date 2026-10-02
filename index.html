@@ -784,7 +784,8 @@ async function carregarFinanceiroReal(contrato){
       valor: b.valor,
       vencimento: formatarDataBr(b.vencimento),
       dataPagamento: b.dataPagamento? formatarDataBr(b.dataPagamento) : null,
-      status: b.status
+      status: b.status,
+      codigoBarras: b.codigoBarras || null
     }));
     contrato.parcelas = parcelas;
     contrato.financeiroReal = true;
@@ -1112,12 +1113,34 @@ function screenParcelaDetail({id}){
       <div class="kv-row"><span class="k">Status</span><span class="v"><span class="badge ${badgeCls(p.status)}">${p.status}</span></span></div>
       <div class="kv-row"><span class="k">Índice de reajuste</span><span class="v">${c.incc.indice}</span></div>
     </div>
-    <div style="margin-top:18px;">
-      <button class="btn btn-primary" onclick="toast('2ª via gerada e enviada para o seu e-mail')">${I.download} Emitir 2ª via do boleto</button>
-    </div>
+    ${p.codigoBarras && p.status!=='Pago'? `<div class="kv-table" style="margin-top:14px;"><div class="kv-row"><span class="k">Código de barras</span><span class="v mono" style="font-size:11.5px; word-break:break-all; text-align:right;">${p.codigoBarras}</span></div></div><div style="margin-top:14px;"><button class="btn btn-primary" onclick="copiarCodigoBarras('${p.id}')">${I.download} Copiar código de barras</button></div>` : ''}
     ${p.status!=='Pago'? `<div style="margin-top:10px;"><button class="btn btn-secondary" onclick="go('solicitacaoFinanceira',{parcelaId:'${p.id}'})">Contestar valor / abrir solicitação</button></div>`:''}
   `;
   return {title:'Detalhe da parcela', back:true, body};
+}
+function copiarCodigoBarras(id){
+  const p = contratoAtivo().parcelas.find(x=>x.id===id);
+  if(!p || !p.codigoBarras) return;
+  const ok = () => toast('Código de barras copiado');
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(p.codigoBarras).then(ok, () => toast('Não foi possível copiar. Selecione o código manualmente.'));
+  } else {
+    toast('Não foi possível copiar. Selecione o código manualmente.');
+  }
+}
+function imprimirExtrato(){
+  const c = contratoAtivo();
+  const linhas = c.parcelas.map(p=>`<tr><td>${escHtml(p.desc)}</td><td>${escHtml(p.vencimento)}</td><td>${escHtml(p.dataPagamento||'-')}</td><td style="text-align:right">${brl(p.valor)}</td><td>${escHtml(p.status)}</td></tr>`).join('');
+  const w = window.open('', '_blank');
+  if(!w){ toast('Libere pop-ups para gerar o extrato.'); return; }
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Extrato financeiro</title>
+    <style>body{font:13px Arial,sans-serif;margin:32px;color:#222}h1{font-size:18px;margin:0 0 4px}p{margin:0 0 16px;color:#555}
+    table{width:100%;border-collapse:collapse}th,td{border-bottom:1px solid #ddd;padding:7px 6px;text-align:left}th{background:#f3f3f3}</style></head><body>
+    <h1>Extrato financeiro - CodeLar by Codeart</h1>
+    <p>${escHtml(c.contrato.empreendimento)} · ${escHtml(c.contrato.unidade)} · Valor total do contrato ${brl(c.contrato.valor)} · Emitido em ${new Date().toLocaleDateString('pt-BR')}</p>
+    <table><thead><tr><th>Parcela</th><th>Vencimento</th><th>Pagamento</th><th style="text-align:right">Valor</th><th>Status</th></tr></thead><tbody>${linhas}</tbody></table>
+    <script>window.onload=function(){window.print();}<\/script></body></html>`);
+  w.document.close();
 }
 function screenExtrato(){
   const c = contratoAtivo();
@@ -1132,7 +1155,7 @@ function screenExtrato(){
       `).join('')}
     </div>
     <div style="margin-top:18px;">
-      <button class="btn btn-secondary" onclick="toast('Extrato em PDF enviado para o seu e-mail')">${I.download} Baixar extrato em PDF</button>
+      <button class="btn btn-secondary" onclick="imprimirExtrato()">${I.download} Imprimir / salvar extrato em PDF</button>
     </div>
   `;
   return {title:'Extrato financeiro', back:true, body};
@@ -1366,7 +1389,6 @@ function obraIlustracaoEtapa(etapa){
 }
 function screenObraDetail(){
   const o = contratoAtivo().obra;
-  const action = `<button class="iconbtn" onclick="toast('Notificações de obra ativadas')" aria-label="Notificações"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg></button>`;
   const body = `
     <div class="hero-panel">
       <p class="eyebrow" style="color:var(--chrome-text-muted);">Evolução geral</p>
@@ -1400,7 +1422,7 @@ function screenObraDetail(){
     </div>
     ` : `<div class="empty">${I.building}<p>A obra desta unidade ainda não começou — os comunicados aparecerão aqui assim que houver novidades.</p></div>`}
   `;
-  return {title:'Evolução da obra', back:false, action, body};
+  return {title:'Evolução da obra', back:false, body};
 }
 
 /* ---------- Atendimento ---------- */
@@ -1455,9 +1477,9 @@ function screenAtendimentoDetail({id}){
       <div class="section-title">Descrição</div>
       <p class="muted" style="margin-top:0; white-space:pre-line;">${a.descricao}</p>
       ${a.status==='Concluído' ? `
-        <button class="btn btn-secondary" onclick="toast('Obrigado! Avaliação enviada.')">Avaliar atendimento</button>
+        <button class="btn btn-secondary" onclick="go('atendimentoAvaliar',{protocolo:'${a.protocolo}'})">Avaliar atendimento</button>
       ` : `
-        <button class="btn btn-ghost" style="width:100%;" onclick="toast('Mensagem enviada para o time técnico')">Enviar mensagem sobre esta solicitação</button>
+        <button class="btn btn-ghost" style="width:100%;" onclick="go('atendimentoMensagem',{protocolo:'${a.protocolo}'})">Enviar mensagem sobre esta solicitação</button>
       `}
     `;
     return {title:'Detalhe da solicitação', back:true, body};
@@ -1482,6 +1504,69 @@ function screenAtendimentoDetail({id}){
     `}
   `;
   return {title:'Detalhe da solicitação', back:true, body};
+}
+function screenAtendimentoMensagem({protocolo}){
+  const body = `
+    <p class="muted" style="margin-top:0;">Sua mensagem fica registrada na solicitação <b>${escHtml(protocolo)}</b> e o time técnico vê por lá.</p>
+    <div class="field">
+      <label>Mensagem</label>
+      <textarea id="am-texto" maxlength="1000" placeholder="Ex: o vazamento voltou ontem à noite..."></textarea>
+    </div>
+    <button class="btn btn-primary" id="am-enviar" onclick="enviarComentarioAtendimento('${escHtml(protocolo)}','mensagem')">Enviar mensagem</button>
+  `;
+  return {title:'Mensagem ao time técnico', back:true, body};
+}
+function screenAtendimentoAvaliar({protocolo}){
+  const body = `
+    <p class="muted" style="margin-top:0;">Como foi o atendimento da solicitação <b>${escHtml(protocolo)}</b>?</p>
+    <div class="field">
+      <label>Nota</label>
+      <select id="av-nota">
+        <option value="5">5 - Excelente</option>
+        <option value="4">4 - Bom</option>
+        <option value="3">3 - Regular</option>
+        <option value="2">2 - Ruim</option>
+        <option value="1">1 - Péssimo</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Comentário (opcional)</label>
+      <textarea id="av-texto" maxlength="1000" placeholder="Conte o que podemos melhorar..."></textarea>
+    </div>
+    <button class="btn btn-primary" id="am-enviar" onclick="enviarComentarioAtendimento('${escHtml(protocolo)}','avaliacao')">Enviar avaliação</button>
+  `;
+  return {title:'Avaliar atendimento', back:true, body};
+}
+async function enviarComentarioAtendimento(protocolo, tipo){
+  const c = contratoAtivo();
+  const texto = (document.getElementById(tipo==='mensagem'?'am-texto':'av-texto').value || '').trim();
+  if(tipo==='mensagem' && !texto){ toast('Escreva a mensagem antes de enviar.'); return; }
+  const nota = tipo==='avaliacao' ? parseInt(document.getElementById('av-nota').value,10) : undefined;
+  const rotulo = tipo==='mensagem' ? 'Enviar mensagem' : 'Enviar avaliação';
+
+  const btn = document.getElementById('am-enviar');
+  btn.disabled = true;
+  btn.textContent = 'Enviando...';
+  try{
+    const resp = await fetch(BUYERCARE_API_BASE + '/api/atendimento-comentario', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({oportunidadeId: c.oportunidadeId, protocolo, tipo, texto: texto || undefined, nota})
+    });
+    const dados = await resp.json();
+    if(!resp.ok || dados.erro){
+      toast(dados.erro || 'Não foi possível enviar agora.');
+      btn.disabled = false;
+      btn.textContent = rotulo;
+      return;
+    }
+    toast(tipo==='mensagem' ? 'Mensagem enviada ao time técnico' : 'Obrigado! Avaliação registrada.');
+    goBack();
+  }catch(e){
+    toast('Falha de conexão. Tente novamente.');
+    btn.disabled = false;
+    btn.textContent = rotulo;
+  }
 }
 function screenNovoAtendimento(){
   const f = state.novoAtendimento;
@@ -1706,6 +1791,8 @@ const SCREENS = {
   atendimentoList: screenAtendimentoList,
   atendimentoDetail: screenAtendimentoDetail,
   novoAtendimento: screenNovoAtendimento,
+  atendimentoMensagem: screenAtendimentoMensagem,
+  atendimentoAvaliar: screenAtendimentoAvaliar,
   agenteChat: screenAgenteChat,
   selecionarUnidade: screenSelecionarUnidade,
 };
