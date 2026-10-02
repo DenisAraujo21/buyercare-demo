@@ -1,4 +1,4 @@
-﻿<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
 <title>Codeart CodeLar</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -507,7 +507,7 @@ const state = {
   },
   novoAtendimento:{ ambiente:'', tipo:'', descricao:'', data:'', anexos:[] },
   chat:[
-    {from:'bot', text:'Olá, Marcos! Sou o assistente virtual do CodeLar. Já sei quem você é, o contrato e a unidade — pode perguntar direto, sem precisar se identificar de novo.'},
+    {from:'bot', text:'Olá! Sou o assistente virtual do CodeLar. Já conheço o seu contrato e a unidade — pode perguntar direto, sem precisar se identificar de novo.'},
   ],
 };
 
@@ -1589,7 +1589,7 @@ async function salvarNovoAtendimento(){
 /* ---------- Agente virtual ---------- */
 const SUGESTOES = [
   'Quando vence minha próxima parcela?',
-  'Gere a segunda via do boleto',
+  'Quero falar com o financeiro',
   'Quais documentos ainda faltam?',
   'Qual o andamento da obra?',
   'Quero abrir uma assistência técnica',
@@ -1597,11 +1597,16 @@ const SUGESTOES = [
 function screenAgenteChat(){
   const body = `
     <div class="chat-wrap" id="chatWrap">
-      ${state.chat.map(m=>`<div class="chat-bubble ${m.from==='bot'?'bot':'user'}">${m.text}</div>`).join('')}
+      ${state.chat.map(m=>`<div class="chat-bubble ${m.from==='bot'?'bot':'user'}">${m.html? m.text : escHtml(m.text)}</div>`).join('')}
+      ${state.chatEnviando? `<div class="chat-bubble bot" style="opacity:.7;">Digitando...</div>` : ''}
     </div>
     <div class="chip-row" style="margin-top:14px;">
       ${SUGESTOES.map(s=>`<button class="chip" onclick="perguntarAgente('${s.replace(/'/g,"\\'")}')">${s}</button>`).join('')}
     </div>
+    <form onsubmit="enviarMensagemAgente(event)" style="display:flex; gap:8px; margin-top:14px;">
+      <input id="chatInput" autocomplete="off" maxlength="500" placeholder="Escreva sua pergunta..." ${state.chatEnviando?'disabled':''} style="flex:1; min-width:0;">
+      <button type="submit" class="btn btn-primary" style="width:auto; padding:0 18px;" ${state.chatEnviando?'disabled':''}>Enviar</button>
+    </form>
   `;
   const action = `<button class="iconbtn" onclick="fecharAgente()" aria-label="Fechar">${I.close}</button>`;
   return {title:'Agente virtual', back:false, action, body};
@@ -1615,7 +1620,7 @@ function respostaAgente(pergunta){
     return prox ? `Sua próxima parcela em aberto${rotuloUnidade} é <b>${prox.desc}</b>, no valor de <b>${brl(prox.valor)}</b>, com vencimento em <b>${prox.vencimento}</b>.` : `Você não tem parcelas em aberto${rotuloUnidade} no momento. 🎉`;
   }
   if(p.includes('segunda via') || p.includes('boleto')){
-    return 'Prontinho — gerei a 2ª via da sua parcela mais próxima e enviei para o seu e-mail cadastrado.';
+    return 'No modo demonstração eu não consigo gerar a 2ª via. Em produção, o time financeiro envia pra você.';
   }
   if(p.includes('documentos')){
     const pend = c.documentos.filter(d=>d.status==='Pendente');
@@ -1635,13 +1640,57 @@ function respostaAgente(pergunta){
   }
   return 'Entendi! Vou encaminhar essa solicitação para a equipe responsável e te aviso por aqui assim que houver uma atualização.';
 }
-function perguntarAgente(texto){
-  state.chat.push({from:'user', text:texto});
-  const resp = respostaAgente(texto);
-  state.chat.push({from:'bot', text:resp});
-  render();
+function escHtml(s){
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function enviarMensagemAgente(ev){
+  ev.preventDefault();
+  const input = document.getElementById('chatInput');
+  const texto = input.value.trim();
+  if(!texto || state.chatEnviando) return;
+  perguntarAgente(texto);
+}
+function rolarChat(){
   const wrap = document.getElementById('chatWrap');
   if(wrap) wrap.scrollIntoView({block:'end'});
+  const input = document.getElementById('chatInput');
+  if(input && !input.disabled) input.focus();
+}
+async function perguntarAgente(texto){
+  const c = contratoAtivo();
+  if(state.chatEnviando) return;
+
+  if(!c.oportunidadeId){
+    state.chat.push({from:'user', text:texto});
+    state.chat.push({from:'bot', text:respostaAgente(texto), html:true});
+    render();
+    rolarChat();
+    return;
+  }
+
+  const historico = state.chat.slice(-6).map(m=>({from:m.from, text:m.html? m.text.replace(/<[^>]+>/g,'') : m.text}));
+  state.chat.push({from:'user', text:texto});
+  state.chatEnviando = true;
+  render();
+  rolarChat();
+  try{
+    const resp = await fetch(BUYERCARE_API_BASE + '/api/agente', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({oportunidadeId: c.oportunidadeId, mensagem: texto, historico})
+    });
+    const dados = await resp.json();
+    if(!resp.ok || dados.erro || !dados.resposta){
+      state.chat.push({from:'bot', text:'Não consegui responder agora. Tente de novo em instantes ou use a aba Atendimento.'});
+    } else {
+      state.chat.push({from:'bot', text:dados.resposta});
+    }
+  }catch(e){
+    state.chat.push({from:'bot', text:'Sem conexão com o servidor no momento. Tente novamente.'});
+  }
+  state.chatEnviando = false;
+  render();
+  rolarChat();
 }
 
 /* ---------- registro de telas ---------- */
