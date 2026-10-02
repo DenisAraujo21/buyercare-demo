@@ -21,6 +21,7 @@
      POST /api/atendimento       Body: { "oportunidadeId": "..." }
      POST /api/atendimento-novo  Body: { "oportunidadeId": "...", "categoria": "...", "ambiente": "...", "descricao": "..." }
      POST /api/atendimento-anexo Body: { "oportunidadeId": "...", "caseId": "...", "nomeArquivo": "...", "tipoArquivo": "...", "conteudoBase64": "..." }
+     POST /api/atendimento-comentario Body: { "oportunidadeId": "...", "protocolo": "...", "tipo": "mensagem|avaliacao", "texto": "...", "nota": 5 }
      POST /api/solicitacao-financeira Body: { "oportunidadeId": "...", "assunto": "...", "descricao": "...", "parcelaInfo": "..." }
      POST /api/agente            Body: { "oportunidadeId": "...", "mensagem": "...", "historico": [{from,text}] }
                                  (assistente virtual: Workers AI via binding "AI" + contexto real do Salesforce)
@@ -199,6 +200,7 @@ export default {
       '/api/atendimento': { apexPath: '/buyercare/atendimento', camposObrigatorios: ['oportunidadeId'] },
       '/api/atendimento-novo': { apexPath: '/buyercare/atendimento-novo', camposObrigatorios: ['oportunidadeId', 'categoria', 'descricao'], camposOpcionais: ['ambiente'] },
       '/api/atendimento-anexo': { apexPath: '/buyercare/atendimento-anexo', camposObrigatorios: ['oportunidadeId', 'caseId', 'nomeArquivo', 'conteudoBase64'], camposOpcionais: ['tipoArquivo'] },
+      '/api/atendimento-comentario': { apexPath: '/buyercare/atendimento-comentario', camposObrigatorios: ['oportunidadeId', 'protocolo', 'tipo'], camposOpcionais: ['texto', 'nota'] },
       '/api/solicitacao-financeira': { apexPath: '/buyercare/solicitacao-financeira', camposObrigatorios: ['oportunidadeId', 'assunto', 'descricao'], camposOpcionais: ['parcelaInfo'] }
     };
     const rota = ROTAS[url.pathname];
