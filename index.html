@@ -505,7 +505,7 @@ const state = {
     obra:[{screen:'obraDetail'}],
     atendimento:[{screen:'atendimentoList'}],
   },
-  novoAtendimento:{ ambiente:'', tipo:'', descricao:'', data:'' },
+  novoAtendimento:{ ambiente:'', tipo:'', descricao:'', data:'', anexos:[] },
   chat:[
     {from:'bot', text:'Olá, Marcos! Sou o assistente virtual do CodeLar. Já sei quem você é, o contrato e a unidade — pode perguntar direto, sem precisar se identificar de novo.'},
   ],
@@ -873,7 +873,7 @@ async function carregarAtendimentoReal(contrato){
     // mantem o mock se a rede falhar - nao quebra a tela
   }
 }
-async function salvarNovoAtendimentoReal(categoria, ambiente, descricao){
+async function salvarNovoAtendimentoReal(categoria, ambiente, descricao, anexos){
   const c = contratoAtivo();
   try{
     const resp = await fetch(BUYERCARE_API_BASE + '/api/atendimento-novo', {
@@ -886,7 +886,27 @@ async function salvarNovoAtendimentoReal(categoria, ambiente, descricao){
       toast('Não foi possível registrar a solicitação.');
       return;
     }
-    toast('Solicitação '+dados.protocolo+' registrada');
+
+    let falhasAnexo = 0;
+    if(anexos && anexos.length && dados.caseId){
+      for(const a of anexos){
+        try{
+          const respAnexo = await fetch(BUYERCARE_API_BASE + '/api/atendimento-anexo', {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({oportunidadeId: c.oportunidadeId, caseId: dados.caseId, nomeArquivo: a.nome, tipoArquivo: a.tipo, conteudoBase64: a.base64})
+          });
+          const dadosAnexo = await respAnexo.json();
+          if(!respAnexo.ok || dadosAnexo.erro) falhasAnexo++;
+        }catch(e){ falhasAnexo++; }
+      }
+    }
+
+    toast(
+      falhasAnexo
+        ? 'Solicitação '+dados.protocolo+' registrada ('+falhasAnexo+' anexo(s) não enviado(s))'
+        : 'Solicitação '+dados.protocolo+' registrada'
+    );
     resetTabTo('atendimentoList');
     await carregarAtendimentoReal(c);
     render();
@@ -1117,9 +1137,17 @@ function screenExtrato(){
   `;
   return {title:'Extrato financeiro', back:true, body};
 }
-function screenSolicitacaoFinanceira(){
+function screenSolicitacaoFinanceira({parcelaId}){
+  const c = contratoAtivo();
+  const parcela = parcelaId ? c.parcelas.find(p=>p.id===parcelaId) : null;
+  const parcelaInfo = parcela ? `${parcela.desc} · ${brl(parcela.valor)} · Vencimento ${parcela.vencimento}` : '';
   const body = `
     <p class="muted" style="margin-top:0;">Conte pra gente o que você precisa — a equipe financeira responde por aqui mesmo.</p>
+    ${parcela? `
+      <div class="kv-table" style="margin-bottom:16px;">
+        <div class="kv-row"><span class="k">Referente a</span><span class="v">${parcelaInfo}</span></div>
+      </div>
+    ` : ''}
     <div class="field">
       <label>Assunto</label>
       <select id="sf-assunto">
@@ -1133,9 +1161,45 @@ function screenSolicitacaoFinanceira(){
       <label>Descreva sua solicitação</label>
       <textarea id="sf-desc" placeholder="Ex: o valor da parcela de setembro veio diferente do combinado..."></textarea>
     </div>
-    <button class="btn btn-primary" onclick="toast('Solicitação enviada ao financeiro'); goBack();">Enviar solicitação</button>
+    <button class="btn btn-primary" id="sf-enviar" onclick="enviarSolicitacaoFinanceira('${parcelaInfo.replace(/'/g,"\\'")}')">Enviar solicitação</button>
   `;
   return {title:'Solicitação financeira', back:true, body};
+}
+async function enviarSolicitacaoFinanceira(parcelaInfo){
+  const assunto = document.getElementById('sf-assunto').value;
+  const descricao = document.getElementById('sf-desc').value.trim();
+  if(!descricao){ toast('Descreva sua solicitação antes de enviar.'); return; }
+
+  const c = contratoAtivo();
+  if(!c.financeiroReal){
+    toast('Solicitação enviada ao financeiro');
+    goBack();
+    return;
+  }
+
+  const btn = document.getElementById('sf-enviar');
+  btn.disabled = true;
+  btn.textContent = 'Enviando...';
+  try{
+    const resp = await fetch(BUYERCARE_API_BASE + '/api/solicitacao-financeira', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({oportunidadeId: c.oportunidadeId, assunto, descricao, parcelaInfo: parcelaInfo || undefined})
+    });
+    const dados = await resp.json();
+    if(!resp.ok || dados.erro || !dados.protocolo){
+      toast('Não foi possível registrar a solicitação.');
+      btn.disabled = false;
+      btn.textContent = 'Enviar solicitação';
+      return;
+    }
+    toast('Solicitação '+dados.protocolo+' enviada ao financeiro');
+    goBack();
+  }catch(e){
+    toast('Falha de conexão ao registrar a solicitação.');
+    btn.disabled = false;
+    btn.textContent = 'Enviar solicitação';
+  }
 }
 
 /* ---------- Documentos ---------- */
@@ -1448,24 +1512,65 @@ function screenNovoAtendimento(){
       <label>Descreva a necessidade</label>
       <textarea id="na-desc" placeholder="Conte com detalhes o que está acontecendo...">${f.descricao}</textarea>
     </div>
-    <button class="btn btn-secondary" style="margin-bottom:14px;" onclick="toast('Fotos anexadas (simulação)')">${I.camera} Anexar fotos ou vídeos</button>
+    <div class="field">
+      <label>Fotos ou vídeos (opcional)</label>
+      <input type="file" id="na-anexos" accept="image/*,video/*" multiple style="display:none" onchange="handleAnexosSelecionados(this)">
+      <button type="button" class="btn btn-secondary" onclick="document.getElementById('na-anexos').click()">${I.camera} Anexar fotos ou vídeos</button>
+      ${f.anexos.length? `
+        <div class="stack" style="margin-top:8px;">
+          ${f.anexos.map((a,i)=>`
+            <div class="list-card" style="padding:8px 12px;">
+              <div style="flex:1; min-width:0; font-size:12.5px;">${a.nome}</div>
+              <button type="button" class="iconbtn" onclick="removerAnexo(${i})" aria-label="Remover anexo">${I.close}</button>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+    </div>
     <button class="btn btn-primary" id="na-enviar" onclick="salvarNovoAtendimento()">Enviar solicitação</button>
   `;
   return {title:'Nova assistência técnica', back:true, body};
+}
+function lerArquivoComoBase64(file){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve((reader.result || '').split(',')[1] || '');
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+async function handleAnexosSelecionados(input){
+  const arquivos = Array.from(input.files || []);
+  for(const file of arquivos){
+    if(file.size > 8*1024*1024){
+      toast('"'+file.name+'" passa de 8MB e não foi anexado.');
+      continue;
+    }
+    const base64 = await lerArquivoComoBase64(file);
+    const tipo = (file.name.split('.').pop() || '').toLowerCase();
+    state.novoAtendimento.anexos.push({ nome: file.name, tipo, base64 });
+  }
+  input.value = '';
+  render();
+}
+function removerAnexo(idx){
+  state.novoAtendimento.anexos.splice(idx, 1);
+  render();
 }
 async function salvarNovoAtendimento(){
   const ambiente = document.getElementById('na-ambiente').value.trim();
   const tipoSel = document.getElementById('na-tipo');
   const tipo = tipoSel.value || 'Outros';
   const descricao = document.getElementById('na-desc').value.trim() || 'Sem descrição detalhada.';
+  const anexos = state.novoAtendimento.anexos;
 
   const c = contratoAtivo();
   if(c.atendimentoReal){
     const btn = document.getElementById('na-enviar');
     btn.disabled = true;
     btn.textContent = 'Enviando...';
-    await salvarNovoAtendimentoReal(tipo, ambiente, descricao);
-    state.novoAtendimento = {ambiente:'', tipo:'', descricao:'', data:''};
+    await salvarNovoAtendimentoReal(tipo, ambiente, descricao, anexos);
+    state.novoAtendimento = {ambiente:'', tipo:'', descricao:'', data:'', anexos:[]};
     return;
   }
 
@@ -1476,7 +1581,7 @@ async function salvarNovoAtendimento(){
     data:new Date().toLocaleDateString('pt-BR'),
   };
   c.atendimentos.unshift(novo);
-  state.novoAtendimento = {ambiente:'', tipo:'', descricao:'', data:''};
+  state.novoAtendimento = {ambiente:'', tipo:'', descricao:'', data:'', anexos:[]};
   resetTabTo('atendimentoList');
   toast('Solicitação '+novo.protocolo+' registrada');
 }
