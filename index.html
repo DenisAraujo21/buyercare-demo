@@ -751,6 +751,81 @@ async function carregarObraReal(contrato){
   contrato.obra.carregando = false;
   if(state.tab==='obra' || state.tab==='inicio') render();
 }
+/* ---------- Avisos de obra (Web Push) ----------
+   O aparelho se inscreve no servico de push do navegador e o Salesforce avisa (via Worker) quando
+   sai uma atualizacao de obra no empreendimento. O push vai sem texto: o service worker mostra uma
+   mensagem generica, entao nenhum dado do cliente passa pelo servico de push. */
+const VAPID_PUBLIC_KEY = 'BAOfpCPo5uxktkZQKZRkuCnZ-ezdihN2W5GE3lkBRgr3EatTvbwu8dRatwRsH3XjoYAnf62cMDWO7YLIyaSSkCA';
+const pushEstado = {
+  suportado: ('serviceWorker' in navigator) && ('PushManager' in window) && ('Notification' in window),
+  inscrito: false, negado: false, ocupado: false, checado: false, erro: ''
+};
+function pushChaveParaBytes(b64u){
+  const bin = atob(b64u.replace(/-/g,'+').replace(/_/g,'/').padEnd(Math.ceil(b64u.length/4)*4,'='));
+  return Uint8Array.from(bin, c=>c.charCodeAt(0));
+}
+async function pushVerificar(){
+  if(!pushEstado.suportado || pushEstado.checado) return;
+  pushEstado.checado = true;
+  try{
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    pushEstado.inscrito = !!sub;
+    pushEstado.negado = Notification.permission === 'denied';
+    if(state.tab==='obra') render();
+  }catch(e){ /* sem push neste aparelho: o cartao some */ pushEstado.suportado = false; }
+}
+async function pushRegistrar(endpoint, acao){
+  const c = contratoAtivo();
+  const resp = await fetch(BUYERCARE_API_BASE + '/api/push-inscricao', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({oportunidadeId: c.oportunidadeId, endpoint, acao})
+  });
+  const dados = await resp.json();
+  if(!resp.ok || dados.erro) throw new Error(dados.erro || 'Falha ao registrar o aviso');
+}
+async function pushAlternar(){
+  if(pushEstado.ocupado) return;
+  const c = contratoAtivo();
+  if(!c || !c.oportunidadeId){ toast('Os avisos de obra ficam disponíveis para contratos reais.'); return; }
+  pushEstado.ocupado = true; pushEstado.erro = ''; render();
+  try{
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if(sub && pushEstado.inscrito){
+      await pushRegistrar(sub.endpoint, 'cancelar');
+      await sub.unsubscribe();
+      pushEstado.inscrito = false;
+      toast('Avisos de obra desativados');
+    }else{
+      const perm = await Notification.requestPermission();
+      if(perm !== 'granted'){ pushEstado.negado = (perm === 'denied'); throw new Error('Permita as notificações para receber os avisos.'); }
+      if(!sub) sub = await reg.pushManager.subscribe({userVisibleOnly:true, applicationServerKey: pushChaveParaBytes(VAPID_PUBLIC_KEY)});
+      await pushRegistrar(sub.endpoint, 'inscrever');
+      pushEstado.inscrito = true;
+      toast('Avisos de obra ativados');
+    }
+  }catch(e){
+    pushEstado.erro = e.message || 'Não foi possível alterar os avisos agora.';
+  }
+  pushEstado.ocupado = false;
+  render();
+}
+function pushCardHtml(){
+  if(!pushEstado.suportado) return '';
+  const on = pushEstado.inscrito;
+  const sub = pushEstado.negado ? 'As notificações estão bloqueadas neste aparelho. Libere nas configurações do navegador.'
+    : on ? 'Você será avisado quando houver uma nova atualização da obra.' : 'Receba um aviso no celular quando a obra do seu imóvel for atualizada.';
+  return `
+    <div class="card" style="padding:14px; display:flex; gap:12px; align-items:center; margin-bottom:14px;">
+      <div class="avatar icon" style="flex:0 0 auto;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px;"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></div>
+      <div style="flex:1; min-width:0;">
+        <b style="font-size:13.5px;">Avisos de obra</b>
+        <p class="muted" style="font-size:12px; margin:3px 0 0;">${pushEstado.erro ? escHtml(pushEstado.erro) : sub}</p>
+      </div>
+      <button class="btn ${on?'btn-secondary':'btn-primary'}" style="padding:9px 14px; font-size:13px; width:auto; flex:none; white-space:nowrap;" onclick="pushAlternar()" ${pushEstado.ocupado||pushEstado.negado?'disabled':''}>${pushEstado.ocupado?'...':on?'Desativar':'Ativar'}</button>
+    </div>`;
+}
 function formatarDataBr(iso){
   if(!iso) return '';
   const [y,m,d] = iso.split('-');
@@ -1389,7 +1464,9 @@ function obraIlustracaoEtapa(etapa){
 }
 function screenObraDetail(){
   const o = contratoAtivo().obra;
+  pushVerificar();
   const body = `
+    ${contratoAtivo().oportunidadeId ? pushCardHtml() : ''}
     <div class="hero-panel">
       <p class="eyebrow" style="color:var(--chrome-text-muted);">Evolução geral</p>
       <h2 style="color:var(--chrome-text); font-size:32px; margin:4px 0 10px; font-family:'IBM Plex Mono';">${o.percentualGeral}%</h2>
