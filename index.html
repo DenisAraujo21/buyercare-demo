@@ -250,7 +250,8 @@ textarea.inp{padding:12px 14px;resize:vertical;min-height:100px}
    o login acha um contrato; o resto e' demonstracao local (marcado nos comentarios).
    ===================================================================================== */
 const BUYERCARE_API_BASE = 'https://buyercare-proxy.codeart-solutions.workers.dev';
-const WHATSAPP_CODEART = 'https://wa.me/5541999990000';
+/* WhatsApp geral da Codeart (https://wa.me/55DDDNUMERO) - vazio ate' existir um numero oficial; o do consultor vem do Salesforce. */
+const WHATSAPP_CODEART = '';
 
 /* ---------- parametros de demonstracao (?tema=escuro&fase=Pos-entrega&mascote=0) ---------- */
 const QS = new URLSearchParams(location.search);
@@ -537,6 +538,7 @@ function selecionarUnidade(id){
   if(id===state.contratoAtivo){ goBack(); return; }
   state.contratoAtivo = id;
   state.stacks = pilhasNovas();
+  if(contratoAtivo().pv) sincronizarEstadoLocal(contratoAtivo());
   toast('Mostrando: '+contratoAtivo().contrato.empreendimento+' · '+contratoAtivo().contrato.unidade);
   render({resetScroll:true});
 }
@@ -596,7 +598,7 @@ function tentarReconectar(){
 }
 function recarregarDadosReais(){
   DB.contratos.filter(c=>c.oportunidadeId).forEach(c=>{
-    carregarObraReal(c); carregarFinanceiroReal(c); carregarDocumentosReal(c); carregarAtendimentoReal(c);
+    carregarObraReal(c); carregarFinanceiroReal(c); carregarDocumentosReal(c); carregarAtendimentoReal(c); carregarPosVenda(c);
   });
 }
 
@@ -661,35 +663,46 @@ async function doLogin(){
       return;
     }
 
-    DB.comprador.nome = dados.nome || DB.comprador.nome;
-    if(Array.isArray(dados.contratos) && dados.contratos.length){
-      const real = dados.contratos[0];
-      // o nome da Unidade no Salesforce as vezes ja vem com o nome do empreendimento dentro
-      // (ex: "TorreBlanca - Apartamento 1002") - evita repetir na tela
-      let unidade = real.unidade || DB.contratos[0].contrato.unidade;
-      if(real.empreendimento && unidade && unidade.startsWith(real.empreendimento)){
-        unidade = unidade.slice(real.empreendimento.length).replace(/^[\s\-·]+/, '');
-      }
-      DB.contratos[0].contrato.empreendimento = real.empreendimento || DB.contratos[0].contrato.empreendimento;
-      DB.contratos[0].contrato.unidade = unidade;
-      DB.contratos[0].contrato.valor = real.valor || DB.contratos[0].contrato.valor;
-      DB.contratos[0].oportunidadeId = real.oportunidadeId;
-    }
-
+    aplicarLogin(dados);
     state.mode = 'app';
     state.loginLoading = false;
     render({resetScroll:true});
-    carregarObraReal(DB.contratos[0]);
-    carregarFinanceiroReal(DB.contratos[0]);
-    carregarDocumentosReal(DB.contratos[0]);
-    carregarAtendimentoReal(DB.contratos[0]);
+    recarregarDadosReais();
   }catch(e){
     state.loginErro = 'Falha de conexão com o servidor. Tente novamente.';
     state.loginLoading = false;
     render();
   }
 }
+/* Contrato real nasce de um modelo vazio (jornada/obra/atendimentos preenchidos depois pelas chamadas ao proxy). */
+function novoContratoReal(real, i){
+  // o nome da Unidade no Salesforce as vezes ja vem com o nome do empreendimento dentro
+  // (ex: "TorreBlanca - Apartamento 1002") - evita repetir na tela
+  let unidade = real.unidade || '';
+  if(real.empreendimento && unidade.startsWith(real.empreendimento)) unidade = unidade.slice(real.empreendimento.length).replace(/^[\s\-·]+/, '');
+  return {
+    id:'r'+(i+1), oportunidadeId:real.oportunidadeId, permissao:real.permissao||'Titular', compartilhado:!!real.compartilhado,
+    contrato:{empreendimento:real.empreendimento||'', unidade, torre:'', metragem:'', valor:real.valor||0,
+      dataAssinatura: real.dataFechamento ? formatarDataBr(real.dataFechamento) : ''},
+    jornada:{etapas:jornadaDe('Obra'), previsao:''},
+    parcelas:[], incc:{ultimoReajuste:'', dataReajuste:'', indice:''}, temIncc:false,
+    documentos:[],
+    obra:{percentualGeral:0, previsao:'em breve', etapas:[], comunicados:[], carregando:true},
+    atendimentos:[],
+  };
+}
+/* Aplica a resposta de /api/login (ou do primeiro acesso): comprador, contratos reais e unidade ativa. */
+function aplicarLogin(dados){
+  DB.comprador.nome = dados.nome || DB.comprador.nome;
+  if(Array.isArray(dados.contratos) && dados.contratos.length){
+    DB.contratos = dados.contratos.map(novoContratoReal);
+    state.contratoAtivo = DB.contratos[0].id;
+    state.stacks = pilhasNovas();
+  }
+}
+const CONTRATOS_DEMO = DB.contratos;
 function doLogout(){
+  DB.contratos = CONTRATOS_DEMO;
   state.tab = 'inicio';
   state.contratoAtivo = 'c1';
   state.stacks = pilhasNovas();
@@ -698,7 +711,7 @@ function doLogout(){
   render({resetScroll:true});
 }
 
-/* ---------- primeiro acesso (3 passos) - DEMONSTRACAO: nao ha busca por CPF nem SMS no backend ainda ---------- */
+/* ---------- primeiro acesso (3 passos): CPF + nascimento + celular -> codigo por e-mail -> login ---------- */
 function irPrimeiroAcesso(){
   state.pa = {step:'identificar', cpf:'', cel:'', nasc:'', codigo:'', erro:'', buscando:false, naoEncontrado:false};
   state.mode = 'primeiroAcesso';
@@ -709,32 +722,55 @@ function paVoltar(){
   else { state.pa.step = state.pa.step==='codigo' ? 'confirmar' : 'identificar'; state.pa.erro = ''; }
   render();
 }
-function paBuscar(){
+async function paBuscar(){
   const pa = state.pa;
   if(pa.buscando) return;
   const cpf = pa.cpf.replace(/\D/g,'');
-  if(cpf.length<11 || pa.cel.replace(/\D/g,'').length<10){
-    pa.erro = 'Confira o CPF e o celular — precisam estar completos.'; render(); return;
+  if(cpf.length<11 || pa.cel.replace(/\D/g,'').length<10 || pa.nasc.replace(/\D/g,'').length<8){
+    pa.erro = 'Confira o CPF, o celular e a data de nascimento — precisam estar completos.'; render(); return;
   }
   pa.erro = ''; pa.naoEncontrado = false; pa.buscando = true; render();
-  setTimeout(()=>{
+  try{
+    const r = await chamarProxy('/api/primeiro-acesso', {acao:'buscar', cpf:pa.cpf, nascimento:pa.nasc, celular:pa.cel});
     pa.buscando = false;
-    pa.naoEncontrado = /000$/.test(cpf);
-    pa.step = pa.naoEncontrado ? 'identificar' : 'confirmar';
-    render();
-  }, 1100);
+    if(r.dados.erro){ pa.erro = r.dados.erro; render(); return; }
+    if(r.dados.encontrado){
+      pa.desafio = r.dados.desafioId; pa.nomeMasc = r.dados.nomeMascarado; pa.emailMasc = r.dados.emailMascarado;
+      pa.imoveis = (r.dados.imoveis||[]).map(s=>s.replace(/^(.+?) · \1 [-·] /, '$1 · ')); pa.step = 'confirmar';
+    } else pa.naoEncontrado = true;
+  }catch(e){ pa.buscando = false; pa.erro = 'Falha de conexão. Tente novamente.'; }
+  render();
 }
-function paEnviarCodigo(){ state.pa.step = 'codigo'; render(); toast('Código enviado por SMS'); }
-function paConfirmarCodigo(){
-  if(state.pa.codigo.replace(/\D/g,'').length<6){ toast('Digite os 6 dígitos do código.'); return; }
-  state.mode = 'onboarding'; state.onbIdx = 0; render();
+async function paEnviarCodigo(){
+  const pa = state.pa;
+  if(pa.buscando) return;
+  pa.buscando = true; render();
+  try{
+    const r = await chamarProxy('/api/primeiro-acesso', {acao:'enviar-codigo', desafioId:pa.desafio});
+    pa.buscando = false;
+    if(r.dados.erro){ pa.erro = r.dados.erro; pa.step = 'identificar'; render(); return; }
+    pa.destino = r.dados.destino; pa.codigoDemo = r.dados.codigoDemo || ''; pa.erro = ''; pa.step = 'codigo';
+    toast(r.dados.enviado ? 'Código enviado por e‑mail' : 'Não conseguimos enviar o e‑mail agora');
+  }catch(e){ pa.buscando = false; pa.erro = 'Falha de conexão. Tente novamente.'; }
+  render();
 }
-function primeiroAcessoHtml(){
+async function paConfirmarCodigo(){
+  const pa = state.pa;
+  if(pa.buscando) return;
+  if(pa.codigo.replace(/\D/g,'').length<6){ toast('Digite os 6 dígitos do código.'); return; }
+  pa.buscando = true; render();
+  try{
+    const r = await chamarProxy('/api/primeiro-acesso', {acao:'confirmar', desafioId:pa.desafio, codigo:pa.codigo});
+    pa.buscando = false;
+    if(r.dados.erro){ pa.erro = r.dados.erro; render(); return; }
+    aplicarLogin(r.dados);
+    state.mode = 'onboarding'; state.onbIdx = 0;
+  }catch(e){ pa.buscando = false; pa.erro = 'Falha de conexão. Tente novamente.'; }
+  render();
+}function primeiroAcessoHtml(){
   const pa = state.pa;
   const stepNum = pa.step==='identificar'?1: pa.step==='confirmar'?2:3;
-  const mascNome = DB.comprador.nome.split(' ').map((p,i)=>i===0?p:p[0]+'•••').join(' ');
-  const mascEmail = DB.comprador.email.replace(/^(.{2}).*(@.*)$/,'$1•••••$2');
-  const mascCel = pa.cel ? pa.cel.replace(/\d(?=\d{4})/g,'•') : '(••) •••••-••••';
+  const mascNome = pa.nomeMasc || '', mascEmail = pa.emailMasc || '', mascDestino = pa.destino || pa.emailMasc || '';
   let corpo = '';
   if(pa.step==='identificar'){
     corpo = `
@@ -743,7 +779,7 @@ function primeiroAcessoHtml(){
       <div class="field"><label class="lb" for="pa-cpf">CPF</label><input class="inp big" id="pa-cpf" inputmode="numeric" placeholder="000.000.000-00" value="${escHtml(pa.cpf)}" oninput="state.pa.cpf=this.value"></div>
       <div class="field"><label class="lb" for="pa-cel">Celular com DDD</label><input class="inp big" id="pa-cel" inputmode="tel" placeholder="(00) 00000-0000" value="${escHtml(pa.cel)}" oninput="state.pa.cel=this.value"></div>
       <div class="field"><label class="lb" for="pa-nasc">Data de nascimento</label><input class="inp big" id="pa-nasc" inputmode="numeric" placeholder="DD/MM/AAAA" value="${escHtml(pa.nasc)}" oninput="state.pa.nasc=this.value"></div>
-      ${pa.naoEncontrado ? `<div class="card pad" style="border-radius:16px;margin-top:12px;"><b style="font-size:15px;display:block;">Não encontramos um contrato com esses dados</b><p class="sm" style="font-size:14px;margin:6px 0 12px;">Pode ser que o contrato esteja no nome de outra pessoa ou que o cadastro ainda esteja sendo concluído pela Codeart. Confira os dados ou fale com a gente.</p><div class="stack"><button class="btn btn-secondary sm" onclick="state.pa.naoEncontrado=false;render()">Conferir os dados</button><a class="btn btn-primary sm" href="${WHATSAPP_CODEART}" target="_blank" rel="noopener">Falar com a Codeart pelo WhatsApp</a></div></div>` : ''}
+      ${pa.naoEncontrado ? `<div class="card pad" style="border-radius:16px;margin-top:12px;"><b style="font-size:15px;display:block;">Não encontramos um contrato com esses dados</b><p class="sm" style="font-size:14px;margin:6px 0 12px;">Pode ser que o contrato esteja no nome de outra pessoa ou que o cadastro ainda esteja sendo concluído pela Codeart. Confira os dados ou fale com a gente.</p><div class="stack"><button class="btn btn-secondary sm" onclick="state.pa.naoEncontrado=false;render()">Conferir os dados</button><button class="btn btn-primary sm" onclick="abrirWhats(WHATSAPP_CODEART,'a Codeart')">Falar com a Codeart pelo WhatsApp</button></div></div>` : ''}
       ${pa.erro ? `<div class="note n-danger" style="margin-top:12px;">${ic('alert',20).replace('<svg','<svg style="color:var(--danger)"')}<span>${escHtml(pa.erro)}</span></div>` : ''}
       <p class="sm" style="margin:16px 0 0;">Seus dados são usados só para localizar o contrato. Nada é compartilhado.</p>
       <div style="margin-top:auto;padding-top:24px;">${btn(pa.buscando?'Procurando seu contrato...':'Encontrar meu contrato','paBuscar()','btn-primary','lg')}</div>`;
@@ -755,17 +791,18 @@ function primeiroAcessoHtml(){
       <div class="card">
         <div class="kv"><span class="k">Nome</span><span class="v">${escHtml(mascNome)}</span></div>
         <div class="kv"><span class="k">E‑mail</span><span class="v">${escHtml(mascEmail)}</span></div>
-        <div style="padding:14px 16px;border-top:1px solid var(--border);"><span class="sm" style="display:block;margin-bottom:8px;">Imóveis no seu nome</span>${DB.contratos.map(c=>`<div style="display:flex;align-items:center;gap:10px;font-size:15px;font-weight:600;padding:6px 0;"><span style="color:var(--accent);display:flex;">${ic('building',18)}</span>${escHtml(c.contrato.empreendimento+' · '+c.contrato.unidade)}</div>`).join('')}</div>
+        <div style="padding:14px 16px;border-top:1px solid var(--border);"><span class="sm" style="display:block;margin-bottom:8px;">Imóveis no seu nome</span>${(pa.imoveis||[]).map(s=>`<div style="display:flex;align-items:center;gap:10px;font-size:15px;font-weight:600;padding:6px 0;"><span style="color:var(--accent);display:flex;">${ic('building',18)}</span>${escHtml(s)}</div>`).join('')}</div>
       </div>
-      <p class="sm" style="font-size:14px;margin:16px 0 0;">Para sua segurança, vamos enviar um código por SMS para <b style="color:var(--text);">${escHtml(mascCel)}</b>.</p>
-      <div class="stack" style="margin-top:auto;padding-top:24px;">${btn('Sou eu, enviar código','paEnviarCodigo()','btn-primary','lg')}<button class="btn btn-muted" onclick="paVoltar()">Não sou eu</button></div>`;
+      <p class="sm" style="font-size:14px;margin:16px 0 0;">Para sua segurança, vamos enviar um código por e‑mail para <b style="color:var(--text);">${escHtml(mascEmail)}</b>.</p>
+      <div class="stack" style="margin-top:auto;padding-top:24px;">${btn(pa.buscando?'Enviando...':'Sou eu, enviar código','paEnviarCodigo()','btn-primary','lg')}<button class="btn btn-muted" onclick="paVoltar()">Não sou eu</button></div>`;
   } else {
     corpo = `
       <h2 class="h2 big" style="margin-bottom:8px;">Digite o código</h2>
-      <p class="lead" style="margin-bottom:24px;">Enviamos 6 dígitos por SMS para ${escHtml(mascCel)}. Na demonstração, qualquer código funciona.</p>
+      <p class="lead" style="margin-bottom:24px;">Enviamos 6 dígitos para ${escHtml(mascDestino)}. O código vale por 10 minutos.${pa.codigoDemo?` <b style="color:var(--text);">Demonstração: seu código é ${escHtml(pa.codigoDemo)}.</b>`:''}</p>
       <input class="inp" id="pa-codigo" inputmode="numeric" maxlength="6" placeholder="••••••" value="${escHtml(pa.codigo)}" oninput="state.pa.codigo=this.value" style="min-height:64px;border-radius:16px;font-size:30px;letter-spacing:.4em;text-align:center;font-family:var(--font-display);font-weight:600;">
-      <button class="btn btn-link" style="margin-top:8px;align-self:flex-start;" onclick="toast('Novo código enviado')">Reenviar código</button>
-      <div style="margin-top:auto;padding-top:24px;">${btn('Confirmar e criar acesso','paConfirmarCodigo()','btn-primary','lg')}</div>`;
+      ${pa.erro ? `<div class="note n-danger" style="margin-top:12px;">${ic('alert',20).replace('<svg','<svg style="color:var(--danger)"')}<span>${escHtml(pa.erro)}</span></div>` : ''}
+      <button class="btn btn-link" style="margin-top:8px;align-self:flex-start;" onclick="paEnviarCodigo()">Reenviar código</button>
+      <div style="margin-top:auto;padding-top:24px;">${btn(pa.buscando?'Confirmando...':'Confirmar e criar acesso','paConfirmarCodigo()','btn-primary','lg')}</div>`;
   }
   return `
   <div style="flex:1;min-height:0;display:flex;flex-direction:column;background:var(--page);">
@@ -800,7 +837,7 @@ function onboardingHtml(){
   </div>`;
 }
 function proximoOnboarding(){ if(state.onbIdx>=2) entrarNoApp(); else { state.onbIdx++; render(); } }
-function entrarNoApp(){ state.mode = 'app'; state.tab = 'inicio'; state.stacks = pilhasNovas(); render({resetScroll:true}); }
+function entrarNoApp(){ state.mode = 'app'; state.tab = 'inicio'; state.stacks = pilhasNovas(); render({resetScroll:true}); recarregarDadosReais(); }
 
 
 /* ---------- dados reais (via proxy -> Salesforce) ---------- */
@@ -866,7 +903,8 @@ async function carregarFinanceiroReal(contrato){
       vencimento: formatarDataBr(b.vencimento),
       dataPagamento: b.dataPagamento? formatarDataBr(b.dataPagamento) : null,
       status: b.status,
-      codigoBarras: b.codigoBarras || null
+      codigoBarras: b.codigoBarras || null,
+      pix: b.pixCopiaECola || null
     }));
     contrato.financeiroReal = true;
     if(r.dados.valorTotalContrato) contrato.contrato.valor = r.dados.valorTotalContrato;
@@ -957,6 +995,72 @@ function avisosLista(){
   if(temContrato) lista.push({id:'av-contrato', tipo:'doc', titulo:'Contrato assinado disponível', texto:'O PDF do seu contrato de compra e venda já está em Documentos.', quando:c.contrato.dataAssinatura||'', ir:()=>switchTab('inicio','documentosList')});
   return lista;
 }
+
+/* ---------- pos-venda (Salesforce): vistoria, entrega, garantias, personalizacao, indicacao, convites, avisos ---------- */
+const ETAPAS_JORNADA = ['Compra','Financeiro','Financiamento','Obra','Vistoria','Entrega das chaves','Pós-entrega'];
+function jornadaDe(etapaAtual){
+  const idx = Math.max(0, ETAPAS_JORNADA.indexOf(etapaAtual));
+  return ETAPAS_JORNADA.map((nome,i)=>({nome, status: i<idx?'concluida': i===idx?'atual':'pendente'}));
+}
+function fmtPctBr(n){ return String(n).replace('.',',')+'%'; }
+/* Pode o usuario agir (pagar, abrir pedido, agendar...)? Co-comprador "Acompanhar" so' olha. */
+function podeAgir(c){
+  c = c || contratoAtivo();
+  if(c.permissao === 'Acompanhar'){ toast('Seu acesso a este imóvel é só para acompanhar.'); return false; }
+  return true;
+}
+/* Agenda: proximas datas oferecidas (Salesforce) - no demo, geradas aqui do mesmo jeito (hoje+3, sem domingos). */
+function slotsLocais(){
+  const out = []; const d = new Date(); d.setDate(d.getDate()+3);
+  const abrev = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  while(out.length<6){
+    if(d.getDay()!==0){
+      const iso = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+      out.push({iso, dia:abrev[d.getDay()], num:String(d.getDate()).padStart(2,'0'), mes:String(d.getMonth()+1)});
+    }
+    d.setDate(d.getDate()+1);
+  }
+  return out;
+}
+function slotsAtivos(){ const c = contratoAtivo(); return (c.pv && c.pv.slots) ? c.pv.slots : {datas:slotsLocais(), horasVistoria:['09:00','10:30','14:00','15:30'], horasEntrega:['09:00','11:00','14:00','16:00']}; }
+const rotuloData = d => d ? `${d.dia}, ${d.num} de ${MESES_EXT[parseInt(d.mes,10)-1]}` : '';
+
+async function chamarPosVenda(c, acao, dados){
+  const r = await chamarProxy('/api/pos-venda', {oportunidadeId:c.oportunidadeId, acao, dados: dados||undefined});
+  if(!r.ok){ toast(r.dados.erro || 'Não foi possível concluir agora.'); return null; }
+  aplicarEstado(c, r.dados);
+  return r.dados;
+}
+async function carregarPosVenda(c){
+  if(!c.oportunidadeId) return;
+  try{ const r = await chamarProxy('/api/pos-venda', {oportunidadeId:c.oportunidadeId, acao:'estado'}); if(r.ok) aplicarEstado(c, r.dados); }catch(e){ /* mantem o que tinha */ }
+}
+function aplicarEstado(c, e){
+  c.pv = e; c.posVendaReal = true;
+  c.jornada.etapas = jornadaDe(e.etapaAtual);
+  if(e.reajuste && e.reajuste.percentual!=null){
+    c.incc = {ultimoReajuste:fmtPctBr(e.reajuste.percentual), dataReajuste:formatarDataBr(e.reajuste.data), indice:e.reajuste.indice||'INCC'};
+    c.temIncc = true;
+  } else c.temIncc = false;
+  if(c.id===state.contratoAtivo) sincronizarEstadoLocal(c);
+  renderSeApp();
+}
+/* Espelha o estado do Salesforce nos objetos que as telas ja usam (state.vi / en / pz / pessoas / prefs). */
+function sincronizarEstadoLocal(c){
+  const e = c.pv; if(!e) return;
+  const v = e.vistoria;
+  if(v && v.status==='Assinada') state.vi = {...state.vi, step:'assinada'};
+  else if(v && v.status==='Agendada') state.vi = {step: state.vi.step==='checklist'?'checklist':'agendada', data:slotDe(v.agenda), hora:v.agenda.hora, check:state.vi.check};
+  else state.vi = {step:'agendar', data:null, hora:'', check:{}};
+  const en = e.entrega;
+  if(en && (en.status==='Agendada' || en.status==='Realizada')) state.en = {step:'agendada', data:slotDe(en.agenda), hora:en.agenda.hora, check:en.checklist||{}};
+  else state.en = {step:'agendar', data:null, hora:'', check:state.en.check||{}};
+  const pz = e.personalizacao;
+  state.pz = {sel:{...(pz.escolhas||{})}, confirmado:!!pz.confirmada};
+  state.pessoas = (e.pessoas||[]).map(p=>({id:p.id, nome:p.nome, sub:p.sub, titular:!!p.titular, status:p.status}));
+  state.prefs = {...e.prefs};
+}
+const slotDe = ag => ag ? {iso:ag.data, dia:ag.dia, num:ag.num, mes:ag.mes} : null;
 
 
 /* Ilustracoes vetoriais por etapa real da obra (sem foto de verdade ainda - isso
@@ -1082,10 +1186,27 @@ const SUGESTOES = [
 
 
 /* ---------- acoes compartilhadas ---------- */
-/* Contato por WhatsApp: ainda nao ha numero oficial configurado (WHATSAPP_CODEART) nesta demonstracao. */
-function abrirWhats(nome){
-  if(WHATSAPP_CODEART){ window.open(WHATSAPP_CODEART, '_blank', 'noopener'); return; }
-  toast('O WhatsApp de '+(nome||'a equipe')+' ainda não está configurado nesta demonstração.');
+/* WhatsApp: abre a conversa quando ha numero (consultor = dono da Oportunidade no Salesforce, ou o numero
+   do pos-venda em CA_BuyerCareConfig__mdt); sem numero, avisa em vez de inventar um. */
+function abrirWhats(url, nome){
+  if(url){ window.open(url, '_blank', 'noopener'); return; }
+  toast('O WhatsApp de '+(nome||'a equipe')+' ainda não está configurado.');
+}
+function dataEntregaChaves(c){ return (c.pv && c.pv.entrega && c.pv.entrega.status==='Realizada' && c.pv.entrega.agenda) ? formatarDataBr(c.pv.entrega.agenda.data) : '12/09/2026'; }
+function consultorDe(c){ return c.pv ? c.pv.consultor : {nome:'Juliana Prado', cargo:'Pós-venda Codeart', whatsapp:null}; }
+function abrirWhatsConsultor(){ const k = consultorDe(contratoAtivo()); abrirWhats(k.whatsapp, k.nome.split(' ')[0]); }
+/* Garantias: [item, exemplos, prazo, restante] - do Salesforce (contadas da entrega real) ou literais no demo. */
+function garantiasDe(c){
+  if(c.pv && c.pv.garantias) return c.pv.garantias.map(g=>[g.item, g.exemplos, g.prazo, g.restante||null]);
+  const demo = {'90 dias':'38 dias', '1 ano':'10 meses', '2 anos':'1 ano e 10 m', '5 anos':'4 anos e 10 m'};
+  return GARANTIAS.map(g=>[g[0], g[1], g[2], demo[g[2]]]);
+}
+function proximaGarantia(c){
+  if(c.pv && c.pv.garantias){
+    const l = c.pv.garantias.filter(g=>g.diasRestantes!=null && g.diasRestantes>0).sort((a,b)=>a.diasRestantes-b.diasRestantes);
+    return l[0] ? l[0].item+' ('+l[0].prazo+')' : '';
+  }
+  return 'Louças, metais e equipamentos (90 dias)';
 }
 function copiarTexto(texto, msgOk){
   const falha = () => toast('Não foi possível copiar. Selecione o código manualmente.');
@@ -1099,10 +1220,13 @@ function copiarCodigoBarras(id){
 }
 /* Pix: o backend ainda nao guarda o "copia e cola" (CA_Boleto__c so' tem o codigo de barras). Nos
    contratos reais o botao primario copia o codigo do boleto; no demo continua "Copiar Pix". */
-function pagarLabel(p){ return contratoAtivo().financeiroReal ? 'Copiar boleto' : 'Copiar Pix'; }
+function pagarLabel(p){ return (!contratoAtivo().financeiroReal || (p && p.pix)) ? 'Copiar Pix' : 'Copiar boleto'; }
 function pagarAcao(p){
   if(state.offline){ toast('Sem conexão. Conecte-se para pagar pelo app.'); return; }
-  if(contratoAtivo().financeiroReal){ copiarCodigoBarras(p.id); return; }
+  if(contratoAtivo().financeiroReal){
+    if(p && p.pix) copiarTexto(p.pix, 'Código Pix copiado'); else copiarCodigoBarras(p.id);
+    return;
+  }
   toast('Código Pix copiado');
 }
 
@@ -1124,7 +1248,7 @@ function cardProximaAcao(){
   }
   if(tipo==='entrega'){
     const en = state.en;
-    const titulo = en.step==='agendada' ? 'Entrega marcada: '+(en.data?en.data[0]+' '+en.data[1]:'')+' às '+en.hora : 'Falta pouco para as chaves';
+    const titulo = en.step==='agendada' ? 'Entrega marcada: '+(en.data?en.data.dia+' '+en.data.num:'')+' às '+en.hora : 'Falta pouco para as chaves';
     const texto = en.step==='agendada' ? 'Leve documento com foto e o ITBI quitado.' : 'Vistoria concluída. Escolha o dia para buscar as chaves e confira os documentos.';
     return `<div class="card dark lg" style="padding:18px;margin-bottom:18px;"><span class="ring" style="top:-40px;right:-40px;width:120px;height:120px;"></span>
       <div style="display:flex;align-items:center;gap:14px;position:relative;">
@@ -1134,7 +1258,7 @@ function cardProximaAcao(){
   }
   if(tipo==='vistoria'){
     const vi = state.vi;
-    const titulo = vi.step==='agendar' ? 'Marcar a vistoria do imóvel' : vi.step==='assinada' ? 'Vistoria concluída' : 'Vistoria marcada: '+(vi.data?vi.data[0]+' '+vi.data[1]+'/10':'')+' às '+vi.hora;
+    const titulo = vi.step==='agendar' ? 'Marcar a vistoria do imóvel' : vi.step==='assinada' ? 'Vistoria concluída' : 'Vistoria marcada: '+(vi.data?vi.data.dia+' '+vi.data.num+'/'+vi.data.mes:'')+' às '+vi.hora;
     const texto = vi.step==='agendar' ? 'A obra está na reta final. Escolha um dia para conferir o imóvel com nosso técnico antes da entrega.' : vi.step==='assinada' ? 'Termo assinado. Próximo passo: entrega das chaves.' : 'Leve documento com foto. O checklist fica disponível aqui no dia.';
     return acaoCard('cal','sun',titulo,texto, btn(vi.step==='agendar'?'Escolher data':'Ver detalhes',"go('vistoria')",'btn-primary','sm'));
   }
@@ -1170,18 +1294,18 @@ const EXPLICA = {
 function toggleJornada(){ state.jornadaAberta = !state.jornadaAberta; render(); }
 function screenInicio(){
   const x = ctx(), c = x.c;
-  const consultor = {nome:'Juliana Prado', cargo:'Pós-venda Codeart'};
+  const consultor = consultorDe(c);
   const ini = consultor.nome.split(' ').map(p=>p[0]).slice(0,2).join('');
   const [explica, voce] = EXPLICA[x.etapaNome] || ['',''];
   const posBloco = `
     ${eyebrow('Sua casa')}
     <div class="card pad lg" style="margin-bottom:18px;">
-      <div style="display:flex;align-items:center;gap:14px;">${icChip('key','success','xl')}<span style="flex:1;min-width:0;"><span class="sm">Chaves entregues em 12/09/2026</span><b class="disp" style="display:block;font-size:20px;line-height:1.2;">Você já está em casa</b></span></div>
+      <div style="display:flex;align-items:center;gap:14px;">${icChip('key','success','xl')}<span style="flex:1;min-width:0;"><span class="sm">Chaves entregues em ${escHtml(dataEntregaChaves(c))}</span><b class="disp" style="display:block;font-size:20px;line-height:1.2;">Você já está em casa</b></span></div>
       <div class="mini-grid" style="margin-top:16px;">
-        <div class="mini"><span class="k">Garantias</span><b>${GARANTIAS.length}</b><span class="sm">itens cobertos</span></div>
+        <div class="mini"><span class="k">Garantias</span><b>${garantiasDe(c).length}</b><span class="sm">itens cobertos</span></div>
         <div class="mini"><span class="k">Pedidos</span><b>${c.atendimentos.filter(a=>a.status!=='Concluído').length}</b><span class="sm">em andamento</span></div>
       </div>
-      <p class="sm" style="font-size:14px;line-height:1.55;margin:14px 0 0;">A próxima garantia a vencer é <b style="color:var(--text);">Louças, metais e equipamentos (90 dias)</b>. Se notar algo, abra um pedido antes do prazo.</p>
+      <p class="sm" style="font-size:14px;line-height:1.55;margin:14px 0 0;">A próxima garantia a vencer é <b style="color:var(--text);">${escHtml(proximaGarantia(c))}</b>. Se notar algo, abra um pedido antes do prazo.</p>
     </div>`;
   const jornadaItens = x.etapas.map((e,i)=>`
     <div class="tl ${i===x.etapas.length-1?'last':''}"><div class="rail"><div class="dot" style="width:${i===x.idx?18:14}px;height:${i===x.idx?18:14}px;background:${i<x.idx?'var(--success)':i===x.idx?'var(--accent)':'var(--border)'};${i===x.idx?'box-shadow:0 0 0 4px var(--accent-soft);':''}">${i<x.idx?ic('check',9,3):''}</div><div class="ln ${i<x.idx?'done':''}"></div></div>
@@ -1201,7 +1325,7 @@ function screenInicio(){
   const atalhos = [
     {label:'Pagar parcela', sub:'Pix ou boleto', ic:'wallet', tone:'success', go:"switchTab('financeiro')"},
     {label:'Documentos', sub:'Contrato e envios', ic:'doc', tone:'accent', go:"go('documentosList')"},
-    x.fasePos ? {label:'Garantias', sub:GARANTIAS.length+' itens cobertos', ic:'building', tone:'sun', go:"switchTab('obra','garantias')"}
+    x.fasePos ? {label:'Garantias', sub:garantiasDe(c).length+' itens cobertos', ic:'building', tone:'sun', go:"switchTab('obra','garantias')"}
               : {label:'Fotos da obra', sub:'Atualizado em '+((c.obra.comunicados[0]||{data:'—'}).data.slice(3)), ic:'building', tone:'sun', go:"switchTab('obra')"},
     {label:'Pedir assistência', sub:'Algo quebrou?', ic:'wrench', tone:'warning', go:"switchTab('ajuda','atendimentoList')"},
   ];
@@ -1215,7 +1339,7 @@ function screenInicio(){
     <div class="card pad lg" style="padding:16px 18px;margin-bottom:18px;display:flex;align-items:center;gap:14px;">
       <span class="disp" style="width:52px;height:52px;border-radius:50%;background:#303E47;color:var(--sun);display:flex;align-items:center;justify-content:center;font-size:18px;flex:0 0 auto;">${ini}</span>
       <span style="flex:1;min-width:0;"><b style="font-size:16px;display:block;line-height:1.25;">${consultor.nome}</b><span class="sm" style="display:block;">${consultor.cargo} · responde em até 1 dia útil</span></span>
-      <button onclick="abrirWhats('${consultor.nome.split(' ')[0]}')" aria-label="Falar no WhatsApp" class="ic t-success" style="width:44px;height:44px;border-radius:14px;border:none;cursor:pointer;">${ic('chat',22)}</button>
+      <button onclick="abrirWhatsConsultor()" aria-label="Falar no WhatsApp" class="ic t-success" style="width:44px;height:44px;border-radius:14px;border:none;cursor:pointer;">${ic('chat',22)}</button>
     </div>
     <div class="mini-grid">${atalhos.map(q=>`<button class="quick" onclick="${q.go}">${icChip(q.ic,q.tone)}<span style="min-width:0;"><b style="font-size:15px;line-height:1.25;display:block;">${q.label}</b><span class="sm" style="font-size:12.5px;display:block;">${q.sub}</span></span></button>`).join('')}</div>`;
   return {title:'Início', body};
@@ -1229,7 +1353,11 @@ function lerAviso(id, ir){
 function lerTodosAvisos(){ avisosLista().forEach(a=>{ if(!state.avisosLidos.includes(a.id)) state.avisosLidos.push(a.id); }); render(); }
 const AV_ICON = {wallet:['success','wallet'], obra:['sun','building'], wrench:['warning','wrench'], doc:['accent','docplain'], cal:['accent','cal']};
 const PREFS_AVISO = [['push','Notificação no celular','Boleto, obra e respostas do técnico'],['email','E‑mail','Resumo mensal e comprovantes'],['whats','WhatsApp','Só avisos urgentes']];
-function togglePref(k){ state.prefs[k] = !state.prefs[k]; render(); }
+async function togglePref(k){
+  const c = contratoAtivo();
+  state.prefs[k] = !state.prefs[k]; render();
+  if(c.oportunidadeId){ const e = await chamarPosVenda(c, 'preferencias-salvar', {...state.prefs}); if(e) toast('Preferência salva'); }
+}
 function screenAvisos(){
   const lista = avisosLista();
   const novos = lista.filter(a=>!state.avisosLidos.includes(a.id)).length;
@@ -1246,7 +1374,7 @@ function screenAvisos(){
   const prefs = `${eyebrow('Como avisar você','mt')}<div class="card">${PREFS_AVISO.map(([k,label,sub])=>`
     <div class="row" style="cursor:default;min-height:60px;"><span class="grow"><b style="font-size:15px;display:block;">${label}</b><span class="sm">${sub}</span></span>
     <button class="toggle ${state.prefs[k]?'on':''}" role="switch" aria-checked="${state.prefs[k]}" aria-label="${label}" onclick="togglePref('${k}')"><i></i></button></div>`).join('')}</div>
-    <p class="sm" style="margin:-4px 0 0;">As preferências valem só neste aparelho. Para receber o aviso de obra no celular, ative em Meu imóvel.</p>`;
+    <p class="sm" style="margin:-4px 0 0;"> Para receber o aviso de obra no celular, ative em Meu imóvel.</p>`;
   return {title:'Avisos', body: corpoLista + prefs};
 }
 let AVISO_IR = {};
@@ -1255,7 +1383,7 @@ let AVISO_IR = {};
 /* ---------- Financeiro ---------- */
 function toggleFinanceiroExpandido(){ state.financeiroExpandido = !state.financeiroExpandido; render(); }
 /* O reajuste (INCC) ainda nao vem do Salesforce: nos contratos reais ele nao e' exibido (so' no demo). */
-function temReajuste(c){ return !c.financeiroReal; }
+function temReajuste(c){ return c.financeiroReal ? !!c.temIncc : true; }
 function pctReajuste(c){ return temReajuste(c) ? (parseFloat(String(c.incc.ultimoReajuste).replace(',','.'))/100 || 0) : 0; }
 function screenFinanceiroList(){
   const x = ctx(), c = x.c;
@@ -1324,8 +1452,8 @@ function screenParcelaDetail({id}){
     </div>
     ${p.aberta ? `<div class="card pad" style="padding:16px;"><b style="font-size:15px;display:block;margin-bottom:10px;">Como pagar</b>
       <div class="stack">
-        <button class="btn btn-primary" onclick="pagarAcao(contratoAtivo().parcelas.find(x=>x.id==='${jsq(p.id)}'))">${c.financeiroReal?'Copiar código do boleto':'Copiar código Pix'}</button>
-        ${c.financeiroReal ? '' : `<button class="btn btn-secondary" onclick="toast('Código do boleto copiado')">Copiar código do boleto</button>`}
+        <button class="btn btn-primary" onclick="pagarAcao(contratoAtivo().parcelas.find(x=>x.id==='${jsq(p.id)}'))">${pagarLabel(p).replace('Copiar boleto','Copiar código do boleto').replace('Copiar Pix','Copiar código Pix')}</button>
+        ${!c.financeiroReal ? `<button class="btn btn-secondary" onclick="toast('Código do boleto copiado')">Copiar código do boleto</button>` : (p.pix && p.codigoBarras ? `<button class="btn btn-secondary" onclick="copiarCodigoBarras('${jsq(p.id)}')">Copiar código do boleto</button>` : '')}
       </div>
       <p class="sm" style="margin:10px 0 0;">${c.financeiroReal && !p.codigoBarras ? 'O código do boleto ainda não foi gerado para esta parcela. ' : ''}O pagamento aparece aqui em até 2 dias úteis.</p>
       <button class="btn btn-link" onclick="irComprovante('${jsq(p.id)}')">Já paguei — enviar comprovante</button></div>` : ''}
@@ -1420,6 +1548,7 @@ function screenSolicitacaoFinanceira({parcelaId}){
 /* Cria o Case financeiro. Devolve {protocolo, caseId} ou null (e ja avisa o usuario). */
 async function criarSolicitacaoFinanceira(assunto, descricao, parcelaInfo){
   const c = contratoAtivo();
+  if(!podeAgir(c)) return null;
   if(!c.financeiroReal){ return {protocolo:'FIN-DEMO', caseId:null, demo:true}; }
   try{
     const r = await chamarProxy('/api/solicitacao-financeira', {oportunidadeId:c.oportunidadeId, assunto, descricao, parcelaInfo: parcelaInfo||undefined});
@@ -1660,7 +1789,7 @@ function trilhaItens(x){
   ];
   const ordem = ['Obra','Vistoria','Entrega das chaves','Pós-entrega'];
   const cur = Math.max(0, ordem.indexOf(x.etapaNome));
-  const feito = ['Concluída','Termo assinado','Entregues em 12/09/2026','Ativas · '+GARANTIAS.length+' itens cobertos'];
+  const feito = ['Concluída','Termo assinado','Entregues em '+dataEntregaChaves(c),'Ativas · '+garantiasDe(c).length+' itens cobertos'];
   return steps.map(([nome,sub,tela],i)=>({nome, tela, sub: i<cur ? feito[i] : (i===3 && cur===3 ? feito[3] : sub), idx:i, cur}));
 }
 function screenObraDetail(){
@@ -1695,7 +1824,7 @@ function screenObraDetail(){
       : `<div class="center muted" style="padding:24px 16px;">${mascote('sentado',120,'margin-bottom:8px;')}<p style="margin:0;line-height:1.5;font-size:15px;">A obra ainda não começou. Assim que houver novidade, avisamos aqui.</p></div>`}`;
   const posObra = `
     ${eyebrow('Garantias ativas')}
-    <div class="card">${GARANTIAS.slice(0,3).map(([item,exemplos,prazo])=>`<button class="row" style="min-height:60px;" onclick="pedirPorGarantia('${jsq(item)}')"><span class="grow"><span class="t">${item}</span><span class="s">${exemplos}</span></span><span style="text-align:right;flex:0 0 auto;"><span class="disp" style="display:block;font-size:15px;">${prazo==='90 dias'?'38 dias':prazo==='1 ano'?'10 meses':prazo==='2 anos'?'1 ano e 10 m':'4 anos e 10 m'}</span><span style="display:block;font-size:12px;color:var(--success);font-weight:600;">restantes</span></span></button>`).join('')}
+    <div class="card">${garantiasDe(c).slice(0,3).map(([item,exemplos,prazo,restante])=>`<button class="row" style="min-height:60px;" onclick="pedirPorGarantia('${jsq(item)}')"><span class="grow"><span class="t">${item}</span><span class="s">${exemplos}</span></span><span style="text-align:right;flex:0 0 auto;"><span class="disp" style="display:block;font-size:15px;">${restante||prazo}</span><span style="display:block;font-size:12px;color:var(--success);font-weight:600;">restantes</span></span></button>`).join('')}
       <button class="btn btn-link" style="width:100%;border-top:1px solid var(--border);border-radius:0;min-height:48px;" onclick="go('garantias')">Ver todas as garantias</button></div>
     ${btn(ic('plus',18)+' Pedir assistência técnica','novoPedido()','btn-primary','lg')}
     ${eyebrow('Documentos da entrega','mt')}
@@ -1749,80 +1878,133 @@ function compartilharResumo(){
   else copiarTexto(texto, 'Resumo copiado');
 }
 
-/* ---------- Personalizar o imovel (DEMONSTRACAO: escolhas ficam so' neste aparelho) ---------- */
-const PZ_GRUPOS = [
-  ['Piso da sala e quartos',[['Porcelanato cinza claro (padrão)',0,'linear-gradient(135deg,#D9DCDE,#C4C9CC)'],['Porcelanato madeira',12800,'linear-gradient(135deg,#B98A5E,#8F6542)'],['Vinílico carvalho',9600,'linear-gradient(135deg,#D2B48C,#A98B6A)']]],
-  ['Bancada da cozinha',[['Granito cinza (padrão)',0,'linear-gradient(135deg,#9A9EA3,#6E7378)'],['Quartzo branco',7400,'linear-gradient(135deg,#F4F4F2,#DADAD6)']]],
-  ['Tomadas e interruptores',[['Branco (padrão)',0,'linear-gradient(135deg,#FFFFFF,#E6E8EA)'],['Preto fosco',1900,'linear-gradient(135deg,#3B4249,#262C31)']]],
+/* ---------- Garantias (prazos NBR 15575) ---------- */
+function screenGarantias(){
+  const x = ctx(), pos = x.etapaNome==='Pós-entrega';
+  const body = `
+    <p class="muted" style="margin:0 0 16px;line-height:1.5;font-size:15px;">Cada parte do imóvel tem um prazo de garantia contado a partir da entrega das chaves. Dentro do prazo, o reparo é por nossa conta.</p>
+    <div class="card">${garantiasDe(x.c).map(([item,ex,prazo,restante])=>`<button class="row" onclick="pedirPorGarantia('${jsq(item)}')"><span class="grow"><span class="t">${item}</span><span class="s">${ex}</span></span><span style="text-align:right;flex:0 0 auto;"><span class="disp" style="display:block;font-size:16px;">${prazo}</span><span style="display:block;font-size:12px;color:${pos?'var(--success)':'var(--muted)'};font-weight:600;">${pos?(restante?restante+' restantes':'Na garantia'):'Conta a partir da entrega'}</span></span></button>`).join('')}</div>
+    <div class="pill-note"><b>Fora da garantia?</b> Ainda ajudamos: indicamos fornecedores homologados com preço combinado. Toque num item para pedir.</div>
+    <p class="sm" style="margin:0;">Prazos conforme NBR 15575 e o Manual do Proprietário. Mau uso, falta de manutenção ou alterações feitas por terceiros não são cobertos.</p>`;
+  return {title:'Garantias do imóvel', body};
+}
+
+
+/* ---------- Personalizar o imovel ----------
+   Contratos reais: catalogo, prazo e escolhas vem/vao para o Salesforce (CA_PersonalizacaoImovel__c +
+   CA_OpcaoPersonalizacao__mdt). Demo: catalogo local, escolhas so' neste aparelho. */
+const PZ_DEMO = [
+  ['Piso da sala e quartos',[['Porcelanato cinza claro',0,'linear-gradient(135deg,#D9DCDE,#C4C9CC)',true],['Porcelanato madeira',12800,'linear-gradient(135deg,#B98A5E,#8F6542)',false],['Vinílico carvalho',9600,'linear-gradient(135deg,#D2B48C,#A98B6A)',false]]],
+  ['Bancada da cozinha',[['Granito cinza',0,'linear-gradient(135deg,#9A9EA3,#6E7378)',true],['Quartzo branco',7400,'linear-gradient(135deg,#F4F4F2,#DADAD6)',false]]],
+  ['Tomadas e interruptores',[['Branco',0,'linear-gradient(135deg,#FFFFFF,#E6E8EA)',true],['Preto fosco',1900,'linear-gradient(135deg,#3B4249,#262C31)',false]]],
 ];
-function pzEscolher(g, i){ state.pz.sel[g] = i; render(); }
-function pzTotal(){ return PZ_GRUPOS.reduce((a,[g,ops])=>a+ops[state.pz.sel[g]||0][1],0); }
-function pzConfirmar(){ state.pz.confirmado = true; render({resetScroll:true}); toast('Escolhas registradas'); }
+/* [{nome, opcoes:[{nome,preco,cor,padrao}]}] e prazo - do Salesforce ou do demo */
+function pzCatalogo(c){
+  if(c.pv && c.pv.personalizacao) return c.pv.personalizacao.grupos;
+  return PZ_DEMO.map(([nome,ops])=>({nome, opcoes:ops.map(([n,preco,cor,padrao])=>({nome:n,preco,cor,padrao}))}));
+}
+function pzPrazoTexto(c){
+  const p = c.pv && c.pv.personalizacao && c.pv.personalizacao.prazo;
+  return p ? formatarDataBr(p) : '30/11/2026';
+}
+function pzEscolhaDe(g){ const sel = state.pz.sel[g.nome]; return g.opcoes.find(o=>o.nome===sel) || g.opcoes.find(o=>o.padrao) || g.opcoes[0]; }
+function pzTotal(){ return pzCatalogo(contratoAtivo()).reduce((a,g)=>a+(pzEscolhaDe(g).preco||0),0); }
+function pzEscolher(g, nome){ state.pz.sel[g] = nome; render(); }
+async function pzSalvar(confirmar){
+  const c = contratoAtivo();
+  if(!podeAgir(c)) return;
+  if(c.oportunidadeId){
+    const escolhas = {}; pzCatalogo(c).forEach(g=>{ escolhas[g.nome] = pzEscolhaDe(g).nome; });
+    const e = await chamarPosVenda(c, 'personalizacao-salvar', {escolhas, confirmar});
+    if(!e) return;
+  } else { state.pz.confirmado = confirmar; render({resetScroll:true}); }
+  if(confirmar) toast('Escolhas registradas');
+}
+function pzConfirmar(){ pzSalvar(true); }
 function pzRever(){ state.pz.confirmado = false; render(); }
 function screenPersonalizar(){
-  const total = pzTotal();
+  const c = contratoAtivo(), grupos = pzCatalogo(c), total = pzTotal(), prazo = pzPrazoTexto(c);
+  const encerrado = c.pv && c.pv.personalizacao && !c.pv.personalizacao.disponivel && !state.pz.confirmado;
   const aberto = `
-    <div class="note n-sun">${ic('clock',20).replace('<svg','<svg style="color:var(--sun-text)"')}<div><b>Escolhas até 30/11/2026</b><div style="font-size:14px;margin-top:3px;line-height:1.5;">Depois disso a obra segue com o padrão do projeto. Você pode mudar quantas vezes quiser até lá.</div></div></div>
-    ${PZ_GRUPOS.map(([g,ops])=>`${eyebrow(g,'" style="margin:18px 0 10px')}<div class="swatch-grid">${ops.map(([nome,preco,sw],i)=>{ const on=(state.pz.sel[g]||0)===i; return `<button class="swatch ${on?'on':''}" onclick="pzEscolher('${jsq(g)}',${i})"><span class="sw" style="background:${sw};">${on?`<span class="ck">${ic('check',14,3)}</span>`:''}</span><span style="min-width:0;"><b style="font-size:14px;display:block;line-height:1.3;">${nome}</b><span style="font-size:13px;font-weight:600;color:${preco?'var(--text)':'var(--success)'};">${preco?'+ '+brl(preco):'Incluso'}</span></span></button>`; }).join('')}</div>`).join('')}
+    <div class="note n-sun">${ic('clock',20).replace('<svg','<svg style="color:var(--sun-text)"')}<div><b>Escolhas até ${prazo}</b><div style="font-size:14px;margin-top:3px;line-height:1.5;">Depois disso a obra segue com o padrão do projeto. Você pode mudar quantas vezes quiser até lá.</div></div></div>
+    ${grupos.map(g=>`${eyebrow(g.nome,'" style="margin:18px 0 10px')}<div class="swatch-grid">${g.opcoes.map(o=>{ const on=pzEscolhaDe(g).nome===o.nome; return `<button class="swatch ${on?'on':''}" onclick="pzEscolher('${jsq(g.nome)}','${jsq(o.nome)}')"><span class="sw" style="background:${o.cor};">${on?`<span class="ck">${ic('check',14,3)}</span>`:''}</span><span style="min-width:0;"><b style="font-size:14px;display:block;line-height:1.3;">${escHtml(o.nome)}${o.padrao?' (padrão)':''}</b><span style="font-size:13px;font-weight:600;color:${o.preco?'var(--text)':'var(--success)'};">${o.preco?'+ '+brl(o.preco):'Incluso'}</span></span></button>`; }).join('')}</div>`).join('')}
     <div class="card pad" style="padding:16px 18px;margin:20px 0 16px;"><div style="display:flex;justify-content:space-between;align-items:baseline;"><span style="font-weight:600;font-size:15px;">Acréscimo total</span><span class="disp" style="font-size:26px;">${total?'+ '+brl(total):'Sem acréscimo'}</span></div>
-      <p class="sm" style="margin:6px 0 0;">Pago em parcela única na entrega ou diluído nas parcelas restantes — você escolhe na confirmação.</p></div>
+      <p class="sm" style="margin:6px 0 0;">Pago em parcela única na entrega ou diluído nas parcelas restantes — o financeiro combina com você depois de confirmar.</p></div>
     ${btn('Confirmar escolhas','pzConfirmar()','btn-primary','lg')}`;
   const feito = `
     <div class="center" style="padding-top:8px;">${mascote('celebrando',160)}<h2 class="h2 big" style="margin:10px 0 8px;">Escolhas registradas</h2>
-      <p class="muted" style="margin:0 auto 20px;font-size:15px;line-height:1.5;max-width:300px;">A obra já recebe o seu padrão. Você pode rever até 30/11/2026; o resumo está em Documentos.</p>
-      <div class="card" style="text-align:left;">${PZ_GRUPOS.map(([g,ops])=>`<div class="kv" style="font-size:14px;padding:13px 16px;"><span class="k">${g}</span><span class="v">${ops[state.pz.sel[g]||0][0].replace(' (padrão)','')}</span></div>`).join('')}</div>
-      <div class="stack">${btn('Rever escolhas','pzRever()','btn-secondary')}</div></div>`;
-  return {title:'Personalizar o imóvel', body: state.pz.confirmado ? feito : aberto};
+      <p class="muted" style="margin:0 auto 20px;font-size:15px;line-height:1.5;max-width:300px;">A obra já recebe o seu padrão. Você pode rever até ${prazo}.</p>
+      <div class="card" style="text-align:left;">${grupos.map(g=>`<div class="kv" style="font-size:14px;padding:13px 16px;"><span class="k">${escHtml(g.nome)}</span><span class="v">${escHtml(pzEscolhaDe(g).nome)}</span></div>`).join('')}
+        <div class="kv" style="font-size:14px;padding:13px 16px;"><span class="k">Acréscimo</span><span class="v">${total?'+ '+brl(total):'Sem acréscimo'}</span></div></div>
+      <div class="stack">${(c.pv && c.pv.personalizacao && !c.pv.personalizacao.disponivel) ? '' : btn('Rever escolhas','pzRever()','btn-secondary')}</div></div>`;
+  const fechado = `<div class="center muted" style="padding:24px 16px;">${mascote('sentado',120,'margin-bottom:8px;')}<p style="margin:0;font-size:15px;line-height:1.5;">O período de escolhas deste imóvel está encerrado. A obra segue com o padrão do projeto.</p></div>`;
+  return {title:'Personalizar o imóvel', body: state.pz.confirmado ? feito : encerrado ? fechado : aberto};
 }
 
-/* ---------- Vistoria (DEMONSTRACAO: agenda e checklist ficam so' neste aparelho) ---------- */
-const VI_DATAS = [['Seg','14'],['Ter','15'],['Qua','16'],['Qui','17'],['Sex','18'],['Sáb','19']];
-const VI_HORAS = ['09:00','10:30','14:00','15:30'];
+/* ---------- Vistoria ----------
+   Contratos reais: agendamento, checklist assinado e ressalvas (viram Case de assistencia) no Salesforce
+   (CA_Vistoria__c / CA_VistoriaItem__c). Demo: tudo local. */
 const VI_CHECK = [['Sala e varanda',['Piso e rodapés','Pintura das paredes','Porta de correr da varanda','Tomadas e interruptores']],['Cozinha e área de serviço',['Bancada e pia','Pontos de água e esgoto','Azulejos','Ponto de gás']],['Banheiros',['Louças e metais','Box e rejunte','Ralo e escoamento','Exaustão']],['Quartos',['Janelas e vedação','Portas e fechaduras','Piso','Pintura']]];
 const VI_ITENS = VI_CHECK.flatMap(([room,itens])=>itens.map(it=>room+'|'+it));
-function diasHtml(datas, sel, acao){ return `<div class="days">${datas.map(([dia,num])=>`<button class="day ${sel&&sel[1]===num?'on':''}" onclick="${acao}('${dia}','${num}')"><small>${dia}</small><b>${num}</b></button>`).join('')}</div>`; }
+function diasHtml(datas, sel, acao){ return `<div class="days">${datas.map(d=>`<button class="day ${sel&&sel.iso===d.iso?'on':''}" onclick="${acao}('${d.iso}')"><small>${d.dia}</small><b>${d.num}</b></button>`).join('')}</div>`; }
 function horasHtml(horas, sel, acao){ return `<div class="chips" style="margin-bottom:20px;">${horas.map(h=>`<button class="chip ${sel===h?'on':''}" onclick="${acao}('${h}')">${h}</button>`).join('')}</div>`; }
-function viData(d,n){ state.vi.data=[d,n]; render(); }
-function viHora(h){ state.vi.hora=h; render(); }
-function viConfirmar(){
+function viData(iso){ state.vi.data = slotsAtivos().datas.find(d=>d.iso===iso); render(); }
+function viHora(h){ state.vi.hora = h; render(); }
+async function viConfirmar(){
   if(!state.vi.data || !state.vi.hora){ toast('Escolha o dia e o horário.'); return; }
-  state.vi.step='agendada'; render({resetScroll:true}); toast('Vistoria marcada');
+  const c = contratoAtivo();
+  if(!podeAgir(c)) return;
+  if(c.oportunidadeId){
+    const e = await chamarPosVenda(c, 'vistoria-agendar', {data:state.vi.data.iso, hora:state.vi.hora});
+    if(!e) return;
+    render({resetScroll:true});
+  } else { state.vi.step = 'agendada'; render({resetScroll:true}); }
+  toast('Vistoria marcada');
 }
 function viCheck(k, v){ state.vi.check[k] = state.vi.check[k]===v ? undefined : v; render(); }
-function viAssinar(){
+async function viAssinar(){
   const ok = VI_ITENS.filter(k=>state.vi.check[k]==='ok').length, nok = VI_ITENS.filter(k=>state.vi.check[k]==='nok').length;
   if(ok+nok < VI_ITENS.length){ toast('Faltam '+(VI_ITENS.length-ok-nok)+' itens para conferir.'); return; }
   const c = contratoAtivo();
-  if(!c.atendimentoReal){
+  if(!podeAgir(c)) return;
+  if(c.oportunidadeId){
+    const itens = VI_ITENS.map(k=>{ const [comodo,item] = k.split('|'); return {comodo, item, resultado:state.vi.check[k]}; });
+    const e = await chamarPosVenda(c, 'vistoria-assinar', {itens});
+    if(!e) return;
+    await carregarAtendimentoReal(c);
+    state.vi.nok = nok;
+  } else {
     VI_ITENS.filter(k=>state.vi.check[k]==='nok').forEach(k=>{
       nextAtendimentoNum++;
       const [room,it] = k.split('|');
       c.atendimentos.unshift({id:'vi'+nextAtendimentoNum, protocolo:'AT-2026-0'+nextAtendimentoNum, tipo:it, ambiente:room, descricao:'Ressalva registrada na vistoria.', status:'Em andamento', sla:'Correção antes da entrega das chaves', data:new Date().toLocaleDateString('pt-BR')});
     });
+    state.vi.step = 'assinada';
   }
-  state.vi.step='assinada'; render({resetScroll:true});
+  render({resetScroll:true});
 }
 function screenVistoria(){
-  const x = ctx(), vi = state.vi, c = x.c;
+  const x = ctx(), vi = state.vi, c = x.c, sl = slotsAtivos();
   const ok = VI_ITENS.filter(k=>vi.check[k]==='ok').length, nok = VI_ITENS.filter(k=>vi.check[k]==='nok').length;
+  const ressalvas = (c.pv && c.pv.vistoria && c.pv.vistoria.ressalvas != null) ? c.pv.vistoria.ressalvas : (vi.nok != null ? vi.nok : nok);
   let corpo = '';
   if(vi.step==='agendar'){
     corpo = `<h2 class="h2">Escolha o dia da sua vistoria</h2>
       <p class="lead">Você vai conferir o imóvel com um técnico da Codeart antes da entrega. Leva cerca de 1h30. Pode levar um acompanhante.</p>
-      ${diasHtml(VI_DATAS, vi.data, 'viData')}<label class="lb">Horário</label>${horasHtml(VI_HORAS, vi.hora, 'viHora')}
+      ${diasHtml(sl.datas, vi.data, 'viData')}<label class="lb">Horário</label>${horasHtml(sl.horasVistoria, vi.hora, 'viHora')}
       <div class="pill-note" style="margin-bottom:20px;"><b>Leve com você:</b> documento com foto e, se tiver, a lista de itens que quer conferir com atenção.</div>
       ${btn('Confirmar vistoria','viConfirmar()','btn-primary','lg')}`;
   } else if(vi.step==='agendada'){
     const passos = [['Chegada','Encontre o técnico na portaria no horário marcado.'],['Percurso cômodo a cômodo','Vocês conferem juntos piso, pintura, portas, janelas, água e luz.'],['Ressalvas com foto','Tudo o que precisar de ajuste é registrado no app, com foto.'],['Assinatura','Você assina o termo pelo celular e recebe a cópia em Documentos.']];
-    corpo = `<div class="card pad lg center" style="padding:20px;">${eyebrow('Vistoria marcada','" style="margin-bottom:6px')}<div class="disp" style="font-size:30px;line-height:1.1;">${vi.data[0]}, ${vi.data[1]} de outubro</div>
+    corpo = `<div class="card pad lg center" style="padding:20px;">${eyebrow('Vistoria marcada','" style="margin-bottom:6px')}<div class="disp" style="font-size:30px;line-height:1.1;">${escHtml(rotuloData(vi.data))}</div>
         <p class="muted" style="margin:6px 0 0;font-size:15px;">às ${vi.hora} · ${escHtml(c.contrato.empreendimento)}, unidade ${escHtml(c.contrato.unidade)}</p>
-        <div class="btns" style="margin-top:16px;"><button class="btn btn-secondary sm" onclick="toast('Adicionado à sua agenda')">Salvar na agenda</button><button class="btn btn-secondary sm" onclick="state.vi.step='agendar';render()">Remarcar</button></div></div>
+        <div class="btns" style="margin-top:16px;"><button class="btn btn-secondary sm" onclick="baixarAgenda('Vistoria do imóvel', state.vi.data, state.vi.hora, 90)">Salvar na agenda</button><button class="btn btn-secondary sm" onclick="state.vi.step='agendar';render()">Remarcar</button></div></div>
       ${eyebrow('Como funciona no dia')}
       <div class="card pad" style="padding:16px 16px 4px;border-radius:18px;">${passos.map(([t,tx],i)=>`<div style="display:flex;gap:14px;"><div style="display:flex;flex-direction:column;align-items:center;width:28px;"><span class="disp" style="width:28px;height:28px;border-radius:50%;background:var(--surface-2);display:flex;align-items:center;justify-content:center;font-size:14px;flex:0 0 auto;">${i+1}</span><div style="width:2px;flex:1;min-height:12px;background:var(--border);display:${i===passos.length-1?'none':'block'};margin:4px 0;"></div></div><div style="padding-bottom:14px;flex:1;"><b style="font-size:15px;display:block;">${t}</b><span class="sm" style="font-size:13.5px;">${tx}</span></div></div>`).join('')}</div>
       ${btn('Abrir checklist da vistoria',"state.vi.step='checklist';render({resetScroll:true})",'btn-primary','lg')}
       <p class="sm center" style="margin:10px 0 0;">O checklist fica disponível para você preencher no dia, junto com o técnico.</p>`;
   } else if(vi.step==='checklist'){
-    corpo = `<p class="muted" style="margin:0 0 14px;font-size:15px;line-height:1.5;">Marque o que está OK e aponte o que precisa de ajuste. Cada ressalva aceita foto.</p>
+    corpo = `<p class="muted" style="margin:0 0 14px;font-size:15px;line-height:1.5;">Marque o que está OK e aponte o que precisa de ajuste. Cada ressalva vira um pedido de assistência.</p>
       ${VI_CHECK.map(([room,itens])=>`${eyebrow(room,'" style="margin:18px 0 8px')}<div class="card" style="margin-bottom:0;">${itens.map(it=>{ const k=room+'|'+it, v=vi.check[k]; return `<div class="row" style="cursor:default;min-height:56px;padding:10px 12px 10px 16px;gap:10px;"><span class="grow" style="font-size:15px;">${it}</span>
         <button aria-label="OK" onclick="viCheck('${jsq(k)}','ok')" style="width:44px;height:40px;border-radius:12px;border:1px solid ${v==='ok'?'var(--success)':'var(--border)'};background:${v==='ok'?'var(--success)':'transparent'};color:${v==='ok'?'#fff':'var(--muted)'};cursor:pointer;display:flex;align-items:center;justify-content:center;">${ic('check',18,2.6)}</button>
         <button aria-label="Ressalva" onclick="viCheck('${jsq(k)}','nok')" style="width:44px;height:40px;border-radius:12px;border:1px solid ${v==='nok'?'var(--warning)':'var(--border)'};background:${v==='nok'?'var(--warning)':'transparent'};color:${v==='nok'?'#fff':'var(--muted)'};cursor:pointer;display:flex;align-items:center;justify-content:center;">${ic('warn',18,2.4)}</button></div>`; }).join('')}</div>`).join('')}
@@ -1831,63 +2013,71 @@ function screenVistoria(){
       <p class="sm center" style="margin:10px 0 0;">As ressalvas viram pedidos de assistência automaticamente, com prazo de correção antes da entrega.</p>`;
   } else {
     corpo = `<div class="center" style="padding-top:8px;">${mascote('celebrando',160)}<h2 class="h2 big" style="margin:10px 0 8px;">Vistoria concluída</h2>
-      <p class="muted" style="margin:0 auto 20px;font-size:15px;line-height:1.5;max-width:300px;">Termo assinado. ${nok} ressalva(s) viraram pedidos de assistência — acompanhe em Ajuda. O próximo passo é a entrega das chaves.</p>
+      <p class="muted" style="margin:0 auto 20px;font-size:15px;line-height:1.5;max-width:300px;">Termo assinado. ${ressalvas} ressalva(s) viraram pedidos de assistência — acompanhe em Ajuda. O próximo passo é a entrega das chaves.</p>
       <div class="stack" style="text-align:left;">${btn('Como foi a vistoria?',"abrirPesquisa('vistoria','')",'btn-primary','lg')}${btn('Voltar ao início',"resetTabTo('inicio')",'btn-secondary','sm')}</div></div>`;
   }
   return {title:'Vistoria', body:corpo};
 }
+/* "Salvar na agenda": baixa um .ics (funciona em iOS/Android/desktop) */
+function baixarAgenda(titulo, data, hora, minutos){
+  if(!data || !hora){ toast('Marque a data primeiro.'); return; }
+  const [hh,mm] = hora.split(':').map(Number);
+  const ini = new Date(data.iso+'T'+hora+':00');
+  const fim = new Date(ini.getTime() + (minutos||60)*60000);
+  const f = d => d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0')+'T'+String(d.getHours()).padStart(2,'0')+String(d.getMinutes()).padStart(2,'0')+'00';
+  const ics = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Codeart//CodeLar//PT','BEGIN:VEVENT','UID:'+Date.now()+'@codelar','DTSTAMP:'+f(new Date())+'','DTSTART:'+f(ini),'DTEND:'+f(fim),'SUMMARY:'+titulo+' - '+contratoAtivo().contrato.empreendimento,'END:VEVENT','END:VCALENDAR'].join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([ics], {type:'text/calendar'}));
+  a.download = 'codelar-evento.ics';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+  toast('Evento baixado — abra para salvar na agenda');
+}
 
-/* ---------- Entrega das chaves (DEMONSTRACAO) ---------- */
-const EN_DATAS = [['Seg','02'],['Ter','03'],['Qua','04'],['Qui','05'],['Sex','06'],['Sáb','07']];
-const EN_HORAS = ['09:00','11:00','14:00','16:00'];
+/* ---------- Entrega das chaves ---------- */
 const EN_CHECK = [['itbi','ITBI quitado','Imposto de transmissão pago na prefeitura'],['registro','Contrato registrado em cartório','Ou protocolo de registro'],['doc','Documento com foto','De todos os compradores'],['seguro','Seguro residencial contratado','Opcional, mas recomendado']];
-function enData(d,n){ state.en.data=[d,n]; render(); }
-function enHora(h){ state.en.hora=h; render(); }
+function enData(iso){ state.en.data = slotsAtivos().datas.find(d=>d.iso===iso); render(); }
+function enHora(h){ state.en.hora = h; render(); }
 function enToggle(k){ state.en.check[k] = !state.en.check[k]; render(); }
-function enConfirmar(){
+async function enConfirmar(){
   if(!state.en.data || !state.en.hora){ toast('Escolha o dia e o horário.'); return; }
-  state.en.step='agendada'; render({resetScroll:true}); toast('Entrega marcada');
+  const c = contratoAtivo();
+  if(!podeAgir(c)) return;
+  if(c.oportunidadeId){
+    const e = await chamarPosVenda(c, 'entrega-agendar', {data:state.en.data.iso, hora:state.en.hora, checklist:state.en.check});
+    if(!e) return;
+    render({resetScroll:true});
+  } else { state.en.step = 'agendada'; render({resetScroll:true}); }
+  toast('Entrega marcada');
 }
 function screenEntrega(){
-  const x = ctx(), c = x.c, en = state.en;
-  const mesNome = MESES_EXT[x.iMes>=0?x.iMes:2];
+  const x = ctx(), c = x.c, en = state.en, sl = slotsAtivos();
+  const entregue = c.pv && c.pv.entrega && c.pv.entrega.status==='Realizada';
   let corpo = '';
   if(en.step==='agendar'){
     corpo = `<div class="card dark lg" style="padding:22px 20px;margin-bottom:18px;"><span class="ring" style="top:-50px;right:-50px;width:150px;height:150px;border-width:20px;"></span>
         ${eyebrow('Faltam','m0" style="color:#CBD1D5;position:relative')}<div class="disp" style="font-size:56px;line-height:1;margin:6px 0 4px;position:relative;">${x.enDias}<span style="font-size:20px;font-weight:400;color:#CBD1D5;"> dias</span></div>
         <p style="margin:0;font-size:15px;color:#CBD1D5;position:relative;">para a entrega das chaves · previsão ${escHtml(c.obra.previsao)}</p></div>
       <h2 class="h2" style="font-size:22px;">Escolha quando quer buscar as chaves</h2>
-      ${eyebrow(mesNome+' de '+x.prevAno)}
       <p class="lead" style="margin-bottom:16px;">A entrega acontece no escritório do empreendimento e leva cerca de 40 minutos.</p>
-      ${diasHtml(EN_DATAS, en.data, 'enData')}<label class="lb">Horário</label>${horasHtml(EN_HORAS, en.hora, 'enHora')}
+      ${diasHtml(sl.datas, en.data, 'enData')}<label class="lb">Horário</label>${horasHtml(sl.horasEntrega, en.hora, 'enHora')}
       ${eyebrow('Antes de ir, confira')}
       <div class="card" style="margin-bottom:20px;">${EN_CHECK.map(([k,label,sub])=>`<button class="row" style="min-height:56px;" onclick="enToggle('${k}')"><span class="checkbox ${en.check[k]?'on':''}">${en.check[k]?ic('check',14,3):''}</span><span class="grow"><span class="t" style="text-decoration:${en.check[k]?'line-through':'none'};">${label}</span><span class="s">${sub}</span></span></button>`).join('')}</div>
       ${btn('Confirmar entrega','enConfirmar()','btn-primary','lg')}`;
   } else {
-    corpo = `<div class="center" style="padding-top:8px;">${mascote('celebrando',170)}${eyebrow('Entrega marcada','" style="margin:12px 0 4px')}
-      <h2 class="h2" style="font-size:30px;line-height:1.1;margin:0 0 6px;">${en.data[0]}, ${en.data[1]} de ${mesNome}</h2>
-      <p class="muted" style="margin:0 auto 20px;font-size:15px;line-height:1.5;max-width:300px;">às ${en.hora} · escritório ${escHtml(c.contrato.empreendimento)}. Traga documento com foto e o comprovante de quitação do ITBI.</p>
-      <div class="stack" style="text-align:left;">${btn('Salvar na agenda',"toast('Adicionado à sua agenda')",'btn-secondary','sm')}<button class="btn btn-muted" onclick="state.en.step='agendar';render()">Remarcar</button></div></div>`;
+    corpo = `<div class="center" style="padding-top:8px;">${mascote('celebrando',170)}${eyebrow(entregue?'Chaves entregues':'Entrega marcada','" style="margin:12px 0 4px')}
+      <h2 class="h2" style="font-size:30px;line-height:1.1;margin:0 0 6px;">${escHtml(rotuloData(en.data))}</h2>
+      <p class="muted" style="margin:0 auto 20px;font-size:15px;line-height:1.5;max-width:300px;">${entregue ? 'Às '+en.hora+'. Bem-vindo à sua casa! As garantias já estão contando.' : 'às '+en.hora+' · escritório '+escHtml(c.contrato.empreendimento)+'. Traga documento com foto e o comprovante de quitação do ITBI.'}</p>
+      ${entregue ? '' : `<div class="stack" style="text-align:left;">${btn('Salvar na agenda',"baixarAgenda('Entrega das chaves', state.en.data, state.en.hora, 40)",'btn-secondary','sm')}<button class="btn btn-muted" onclick="state.en.step='agendar';render()">Remarcar</button></div>`}</div>`;
   }
   return {title:'Entrega das chaves', body:corpo};
 }
 
-/* ---------- Garantias (prazos NBR 15575) ---------- */
-function screenGarantias(){
-  const pos = ctx().etapaNome==='Pós-entrega';
-  const body = `
-    <p class="muted" style="margin:0 0 16px;line-height:1.5;font-size:15px;">Cada parte do imóvel tem um prazo de garantia contado a partir da entrega das chaves. Dentro do prazo, o reparo é por nossa conta.</p>
-    <div class="card">${GARANTIAS.map(([item,ex,prazo])=>`<button class="row" onclick="pedirPorGarantia('${jsq(item)}')"><span class="grow"><span class="t">${item}</span><span class="s">${ex}</span></span><span style="text-align:right;flex:0 0 auto;"><span class="disp" style="display:block;font-size:16px;">${prazo}</span><span style="display:block;font-size:12px;color:${pos?'var(--success)':'var(--muted)'};font-weight:600;">${pos?'Na garantia':'Conta a partir da entrega'}</span></span></button>`).join('')}</div>
-    <div class="pill-note"><b>Fora da garantia?</b> Ainda ajudamos: indicamos fornecedores homologados com preço combinado. Toque num item para pedir.</div>
-    <p class="sm" style="margin:0;">Prazos conforme NBR 15575 e o Manual do Proprietário. Mau uso, falta de manutenção ou alterações feitas por terceiros não são cobertos.</p>`;
-  return {title:'Garantias do imóvel', body};
-}
 
 
 /* ---------- Ajuda ---------- */
-const CONSULTOR = {nome:'Juliana Prado', cargo:'Pós-venda Codeart'};
 function screenAjuda(){
-  const x = ctx(), c = x.c;
+  const x = ctx(), c = x.c, consultor = consultorDe(c);
   const grupos = [
     ['Resolver algo', [
       {label:'Pedir assistência técnica', sub:'Algo quebrou ou não funciona', ic:'wrench', tone:'warning', go:"go('atendimentoList')"},
@@ -1898,7 +2088,7 @@ function screenAjuda(){
       {label:'Informe para o IR', sub:'Valores pagos por ano', ic:'receipt', tone:'accent', go:"go('informeIR')"},
       {label:'Indique um amigo', sub:'Ganhe R$ 3.000 de crédito por indicação', ic:'gift', tone:'success', go:"go('indicar')"},
       {label:'Quem mais acessa', sub:state.pessoas.length+' pessoa'+(state.pessoas.length>1?'s':'')+' com acesso ao contrato', ic:'users', tone:'neutral', go:"go('coComprador')"},
-      {label:'Falar com '+CONSULTOR.nome.split(' ')[0], sub:CONSULTOR.cargo+' · WhatsApp', ic:'phone', tone:'neutral', go:"abrirWhats('"+CONSULTOR.nome.split(' ')[0]+"')"},
+      {label:'Falar com '+consultor.nome.split(' ')[0], sub:consultor.cargo+' · WhatsApp', ic:'phone', tone:'neutral', go:"abrirWhatsConsultor()"},
     ]],
   ];
   const recentes = c.atendimentos.slice(0,2).map(a=>atendimentoView(a));
@@ -2136,49 +2326,6 @@ function screenPesquisa(){
   return {title:'Sua opinião', body:corpo};
 }
 
-/* ---------- Indique um amigo (DEMONSTRACAO: sem backend de indicacoes) ---------- */
-function screenIndicar(){
-  const c = contratoAtivo();
-  const codigo = 'MARCOS'+c.contrato.unidade.replace(/\D/g,'').slice(-4);
-  const ind = [{nome:'Carla Menezes', sub:'Visitou o Bosque Ipê em 20/09', status:'Em negociação', tone:'sky'},{nome:'Rafael Souza', sub:'Contrato assinado em 05/06', status:'Crédito liberado', tone:'success'}];
-  const body = `
-    <div class="card dark lg" style="padding:22px 20px;"><span class="ring" style="top:-50px;right:-50px;width:150px;height:150px;border-width:20px;"></span>
-      <p class="eyebrow m0" style="color:#CBD1D5;position:relative;">Indique e ganhe</p>
-      <h2 class="h2 big" style="margin:8px 0 6px;position:relative;color:#F2F2F2;">R$ 3.000 de crédito nas suas parcelas</h2>
-      <p style="margin:0;font-size:14px;color:#CBD1D5;line-height:1.5;position:relative;">Para cada amigo que fechar um imóvel com a Codeart. Seu amigo ganha R$ 5.000 de desconto na entrada.</p></div>
-    <div class="card pad" style="padding:16px 18px;">${eyebrow('Seu código','" style="margin-bottom:8px')}<div style="display:flex;align-items:center;gap:10px;"><span class="disp" style="flex:1;font-size:26px;letter-spacing:.08em;">${escHtml(codigo)}</span><button class="btn btn-secondary auto" style="min-height:40px;padding:0 14px;font-size:14px;" onclick="copiarTexto('${jsq(codigo)}','Código copiado')">Copiar</button></div></div>
-    ${btn('Compartilhar pelo WhatsApp',"abrirWhats('seus amigos')",'btn-primary','lg')}
-    ${eyebrow('Suas indicações','mt')}
-    <div class="card">${ind.map(i=>`<div class="row" style="cursor:default;"><span class="disp" style="width:40px;height:40px;border-radius:50%;background:var(--surface-2);display:flex;align-items:center;justify-content:center;font-size:14px;flex:0 0 auto;">${i.nome.split(' ').map(p=>p[0]).slice(0,2).join('')}</span><span class="grow"><b style="font-size:15px;display:block;">${i.nome}</b><span class="sm">${i.sub}</span></span>${badge(i.tone,i.status)}</div>`).join('')}</div>
-    <p class="sm" style="margin:12px 0 0;">O crédito entra na parcela seguinte à assinatura do contrato do seu amigo. Consulte o regulamento.</p>`;
-  return {title:'Indique um amigo', body};
-}
-
-/* ---------- Quem mais acessa (DEMONSTRACAO: sem convite real) ---------- */
-function convPerm(p){ state.conv.perm = p; render(); }
-function removerPessoa(i){ state.pessoas.splice(i,1); toast('Acesso removido'); render(); }
-function convidar(){
-  const cv = state.conv;
-  if(!cv.nome.trim() || cv.cpf.replace(/\D/g,'').length<11){ toast('Preencha nome e CPF completos.'); return; }
-  state.pessoas.push({nome:cv.nome.trim(), sub: cv.perm==='tudo'?'Pode ver tudo e agir':'Pode acompanhar', status:'pendente'});
-  state.conv = {nome:'', cpf:'', perm:'ver'};
-  toast('Convite enviado por SMS e e‑mail'); render();
-}
-function screenCoComprador(){
-  const cv = state.conv;
-  const body = `
-    <p class="muted" style="margin:0 0 16px;line-height:1.5;font-size:15px;">Compartilhe o acompanhamento com quem comprou junto com você. Cada pessoa entra com o próprio login; só você pode remover acessos.</p>
-    <div class="card">${state.pessoas.map((p,i)=>`<div class="row" style="cursor:default;min-height:68px;"><span class="disp" style="width:44px;height:44px;border-radius:50%;background:${p.titular?'#303E47':'var(--accent-soft)'};color:${p.titular?'var(--sun)':'var(--accent)'};display:flex;align-items:center;justify-content:center;font-size:16px;flex:0 0 auto;">${p.nome.split(' ').map(x=>x[0]).slice(0,2).join('')}</span><span class="grow"><b style="font-size:15px;display:block;">${escHtml(p.nome)}</b><span class="sm" style="display:block;">${escHtml(p.sub)}</span></span>${p.titular?badge('charcoal','Titular'):''}${p.status==='pendente'?badge('warning','Convite enviado'):''}${!p.titular?`<button class="btn btn-danger-link" onclick="removerPessoa(${i})">Remover</button>`:''}</div>`).join('')}</div>
-    ${state.pessoas.length<3 ? `${eyebrow('Convidar')}<div class="card pad" style="padding:16px;">
-      <div class="field" style="margin-bottom:12px;"><label class="lb" for="cv-nome">Nome</label><input class="inp" id="cv-nome" placeholder="Como está no contrato" value="${escHtml(cv.nome)}" oninput="state.conv.nome=this.value"></div>
-      <div class="field" style="margin-bottom:12px;"><label class="lb" for="cv-cpf">CPF</label><input class="inp" id="cv-cpf" inputmode="numeric" placeholder="000.000.000-00" value="${escHtml(cv.cpf)}" oninput="state.conv.cpf=this.value"></div>
-      <label class="lb">O que essa pessoa pode fazer</label>
-      <div class="stack" style="margin-bottom:16px;">${[['ver','Acompanhar','Vê obra, parcelas e documentos'],['tudo','Acompanhar e agir','Também paga, envia documentos e abre pedidos']].map(([k,label,sub])=>`<button class="choice ${cv.perm===k?'on':''}" onclick="convPerm('${k}')"><span class="radio">${cv.perm===k?'<i></i>':''}</span><span><b style="font-size:15px;display:block;">${label}</b><span class="sm" style="font-weight:400;">${sub}</span></span></button>`).join('')}</div>
-      <p class="sm" style="margin:0 0 14px;">Só aceitamos pessoas que constam no contrato. Conferimos o CPF com o cadastro da Codeart antes de liberar.</p>
-      ${btn('Enviar convite','convidar()','btn-primary','lg')}</div>` : ''}`;
-  return {title:'Quem mais acessa', body};
-}
-
 /* ---------- Selecionar unidade ---------- */
 function screenSelecionarUnidade(){
   const body = `
@@ -2276,6 +2423,107 @@ const SCREENS = {
 };
 
 render();
+
+
+/* ---------- Indique um amigo ----------
+   Contratos reais: codigo do comprador (Contact.CA_CodigoIndicacao__c), bonus (CA_BuyerCareConfig__mdt) e
+   a lista de indicados (Lead com o mesmo codigo) vem do Salesforce; "Indicar agora" cria o Lead.
+   Demo: tudo local. */
+const IND_DEMO = {bonusIndicador:3000, bonusIndicado:5000, indicacoes:[{nome:'Carla Menezes', sub:'Visitou o Bosque Ipê em 20/09', status:'Em negociação', tone:'sky'},{nome:'Rafael Souza', sub:'Contrato assinado em 05/06', status:'Crédito liberado', tone:'success'}]};
+function indicacaoDe(c){
+  if(c.pv && c.pv.indicacao){ const i = c.pv.indicacao; return {codigo:i.codigo, bonusIndicador:i.bonusIndicador, bonusIndicado:i.bonusIndicado, indicacoes:i.indicacoes||[]}; }
+  return {codigo:'MARCOS'+c.contrato.unidade.replace(/\D/g,'').slice(-4), ...IND_DEMO};
+}
+function compartilharIndicacao(){
+  const c = contratoAtivo(), i = indicacaoDe(c);
+  const texto = `Comprei meu imóvel com a Codeart e recomendo! Use meu código ${i.codigo} quando falar com eles.`;
+  window.open('https://wa.me/?text='+encodeURIComponent(texto), '_blank', 'noopener');
+}
+state.ind = {nome:'', tel:'', enviando:false};
+async function indicarAgora(){
+  const c = contratoAtivo(), ind = state.ind;
+  if(ind.enviando) return;
+  if(!ind.nome.trim() || ind.tel.replace(/\D/g,'').length<10){ toast('Preencha o nome e o celular com DDD do seu amigo.'); return; }
+  if(!podeAgir(c)) return;
+  if(c.oportunidadeId){
+    ind.enviando = true; render();
+    const e = await chamarPosVenda(c, 'indicacao-criar', {nome:ind.nome.trim(), telefone:ind.tel.trim()});
+    ind.enviando = false;
+    if(!e){ render(); return; }
+  } else {
+    IND_DEMO.indicacoes.unshift({nome:ind.nome.trim(), sub:'Indicado agora', status:'Em contato', tone:'sky'});
+  }
+  state.ind = {nome:'', tel:'', enviando:false};
+  toast('Indicação enviada. A Codeart entra em contato com o seu amigo.');
+  render();
+}
+function screenIndicar(){
+  const c = contratoAtivo(), i = indicacaoDe(c), ind = state.ind;
+  const body = `
+    <div class="card dark lg" style="padding:22px 20px;"><span class="ring" style="top:-50px;right:-50px;width:150px;height:150px;border-width:20px;"></span>
+      <p class="eyebrow m0" style="color:#CBD1D5;position:relative;">Indique e ganhe</p>
+      <h2 class="h2 big" style="margin:8px 0 6px;position:relative;color:#F2F2F2;">${i.bonusIndicador?brl(i.bonusIndicador)+' de crédito nas suas parcelas':'Indique um amigo'}</h2>
+      <p style="margin:0;font-size:14px;color:#CBD1D5;line-height:1.5;position:relative;">Para cada amigo que fechar um imóvel com a Codeart.${i.bonusIndicado?' Seu amigo ganha '+brl(i.bonusIndicado)+' de desconto na entrada.':''}</p></div>
+    <div class="card pad" style="padding:16px 18px;">${eyebrow('Seu código','" style="margin-bottom:8px')}<div style="display:flex;align-items:center;gap:10px;"><span class="disp" style="flex:1;font-size:26px;letter-spacing:.08em;">${escHtml(i.codigo||'—')}</span><button class="btn btn-secondary auto" style="min-height:40px;padding:0 14px;font-size:14px;" onclick="copiarTexto('${jsq(i.codigo||'')}','Código copiado')">Copiar</button></div></div>
+    ${btn('Compartilhar pelo WhatsApp','compartilharIndicacao()','btn-primary','lg')}
+    ${eyebrow('Ou indique agora','mt')}
+    <div class="card pad" style="padding:16px;">
+      <div class="field" style="margin-bottom:12px;"><label class="lb" for="ind-nome">Nome do seu amigo</label><input class="inp" id="ind-nome" value="${escHtml(ind.nome)}" oninput="state.ind.nome=this.value"></div>
+      <div class="field" style="margin-bottom:14px;"><label class="lb" for="ind-tel">Celular com DDD</label><input class="inp" id="ind-tel" inputmode="tel" placeholder="(00) 00000-0000" value="${escHtml(ind.tel)}" oninput="state.ind.tel=this.value"></div>
+      ${btn(ind.enviando?'Enviando...':'Indicar','indicarAgora()','btn-secondary')}</div>
+    ${eyebrow('Suas indicações','mt')}
+    ${i.indicacoes.length ? `<div class="card">${i.indicacoes.map(x=>`<div class="row" style="cursor:default;"><span class="disp" style="width:40px;height:40px;border-radius:50%;background:var(--surface-2);display:flex;align-items:center;justify-content:center;font-size:14px;flex:0 0 auto;">${escHtml(x.nome.split(' ').map(p=>p[0]).slice(0,2).join(''))}</span><span class="grow"><b style="font-size:15px;display:block;">${escHtml(x.nome)}</b><span class="sm">${escHtml(x.sub)}</span></span>${badge(x.tone,escHtml(x.status))}</div>`).join('')}</div>`
+      : `<p class="sm">Você ainda não indicou ninguém.</p>`}
+    <p class="sm" style="margin:12px 0 0;">O crédito entra na parcela seguinte à assinatura do contrato do seu amigo. Consulte o regulamento.</p>`;
+  return {title:'Indique um amigo', body};
+}
+
+/* ---------- Quem mais acessa ----------
+   Contratos reais: convites em CA_ConviteAcesso__c; o CPF precisa constar no contrato (conferido no
+   Salesforce); o convidado entra com o proprio e-mail. Demo: lista local. */
+function convPerm(p){ state.conv.perm = p; render(); }
+async function removerPessoa(i){
+  const c = contratoAtivo(), p = state.pessoas[i];
+  if(!podeAgir(c) || !p) return;
+  if(c.oportunidadeId){
+    const e = await chamarPosVenda(c, 'convite-remover', {conviteId:p.id});
+    if(!e) return;
+  } else { state.pessoas.splice(i,1); }
+  toast('Acesso removido'); render();
+}
+async function convidar(){
+  const cv = state.conv, c = contratoAtivo();
+  if(cv.enviando) return;
+  if(!cv.nome.trim() || cv.cpf.replace(/\D/g,'').length<11){ toast('Preencha nome e CPF completos.'); return; }
+  if(!podeAgir(c)) return;
+  const permissao = cv.perm==='tudo' ? 'Acompanhar e agir' : 'Acompanhar';
+  if(c.oportunidadeId){
+    cv.enviando = true; render();
+    const e = await chamarPosVenda(c, 'convite-criar', {nome:cv.nome.trim(), cpf:cv.cpf, permissao});
+    cv.enviando = false;
+    if(!e){ render(); return; }
+  } else {
+    state.pessoas.push({nome:cv.nome.trim(), sub: cv.perm==='tudo'?'Pode ver tudo e agir':'Pode acompanhar', status:'pendente'});
+  }
+  state.conv = {nome:'', cpf:'', perm:'ver', enviando:false};
+  toast('Convite enviado por e‑mail'); render();
+}
+function screenCoComprador(){
+  const cv = state.conv, c = contratoAtivo();
+  const souTitular = !c.permissao || c.permissao==='Titular';
+  const body = `
+    <p class="muted" style="margin:0 0 16px;line-height:1.5;font-size:15px;">Compartilhe o acompanhamento com quem comprou junto com você. Cada pessoa entra com o próprio login; só o titular pode remover acessos.</p>
+    <div class="card">${state.pessoas.map((p,i)=>`<div class="row" style="cursor:default;min-height:68px;"><span class="disp" style="width:44px;height:44px;border-radius:50%;background:${p.titular?'#303E47':'var(--accent-soft)'};color:${p.titular?'var(--sun)':'var(--accent)'};display:flex;align-items:center;justify-content:center;font-size:16px;flex:0 0 auto;">${escHtml(p.nome.split(' ').map(x=>x[0]).slice(0,2).join(''))}</span><span class="grow"><b style="font-size:15px;display:block;">${escHtml(p.nome)}</b><span class="sm" style="display:block;">${escHtml(p.sub||'')}</span></span>${p.titular?badge('charcoal','Titular'):''}${p.status==='pendente'?badge('warning','Convite enviado'):''}${(!p.titular && souTitular)?`<button class="btn btn-danger-link" onclick="removerPessoa(${i})">Remover</button>`:''}</div>`).join('')}</div>
+    ${(state.pessoas.length<3 && souTitular) ? `${eyebrow('Convidar')}<div class="card pad" style="padding:16px;">
+      <div class="field" style="margin-bottom:12px;"><label class="lb" for="cv-nome">Nome</label><input class="inp" id="cv-nome" placeholder="Como está no contrato" value="${escHtml(cv.nome)}" oninput="state.conv.nome=this.value"></div>
+      <div class="field" style="margin-bottom:12px;"><label class="lb" for="cv-cpf">CPF</label><input class="inp" id="cv-cpf" inputmode="numeric" placeholder="000.000.000-00" value="${escHtml(cv.cpf)}" oninput="state.conv.cpf=this.value"></div>
+      <label class="lb">O que essa pessoa pode fazer</label>
+      <div class="stack" style="margin-bottom:16px;">${[['ver','Acompanhar','Vê obra, parcelas e documentos'],['tudo','Acompanhar e agir','Também paga, envia documentos e abre pedidos']].map(([k,label,sub])=>`<button class="choice ${cv.perm===k?'on':''}" onclick="convPerm('${k}')"><span class="radio">${cv.perm===k?'<i></i>':''}</span><span><b style="font-size:15px;display:block;">${label}</b><span class="sm" style="font-weight:400;">${sub}</span></span></button>`).join('')}</div>
+      <p class="sm" style="margin:0 0 14px;">Só aceitamos pessoas que constam no contrato. Conferimos o CPF com o cadastro da Codeart antes de liberar.</p>
+      ${btn(cv.enviando?'Enviando...':'Enviar convite','convidar()','btn-primary','lg')}</div>` : ''}`;
+  return {title:'Quem mais acessa', body};
+}
+
 
 </script>
 </body>
