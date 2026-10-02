@@ -25,6 +25,8 @@
      POST /api/solicitacao-financeira Body: { "oportunidadeId": "...", "assunto": "...", "descricao": "...", "parcelaInfo": "..." }
      POST /api/agente            Body: { "oportunidadeId": "...", "mensagem": "...", "historico": [{from,text}] }
                                  (assistente virtual: Workers AI via binding "AI" + contexto real do Salesforce)
+     POST /api/push-inscricao    Body: { "oportunidadeId": "...", "endpoint": "https://...", "acao": "inscrever|cancelar" }
+     POST /api/push-enviar       Body: { "token": "...", "endpoints": ["https://..."] }  (so' o Salesforce chama; devolve {enviados, gone[], falhas[]})
    Resposta: o mesmo JSON que a classe Apex correspondente devolve. */
 
 const TOKEN_SAFETY_MARGIN_MS = 60 * 1000;
@@ -170,6 +172,60 @@ async function responderAgente(env, payload) {
   return { resposta, encaminhado: encaminhar };
 }
 
+/* ---------- Web Push (notificacoes de obra) ----------
+   Push SEM payload: o servico de push do navegador so' recebe "ha algo novo" e o service worker do
+   app mostra uma mensagem generica - nenhum dado do cliente trafega por ele. Autenticacao VAPID
+   (RFC 8292): JWT ES256 assinado com a chave privada guardada como secret do Worker.
+     VAPID_PUBLIC  -> chave publica (ponto P-256 nao comprimido, base64url) - a mesma que o app usa em pushManager.subscribe
+     VAPID_PRIVATE -> parametro "d" da chave privada P-256 (base64url) */
+const bytesDeB64u = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(s.length / 4) * 4, '=')), (c) => c.charCodeAt(0));
+const b64uDeBytes = (b) => btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+let chaveVapidCache = null;
+async function chaveVapid(env) {
+  if (chaveVapidCache) return chaveVapidCache;
+  const pub = bytesDeB64u(env.VAPID_PUBLIC);
+  chaveVapidCache = await crypto.subtle.importKey('jwk', {
+    kty: 'EC', crv: 'P-256', d: env.VAPID_PRIVATE,
+    x: b64uDeBytes(pub.slice(1, 33)), y: b64uDeBytes(pub.slice(33, 65))
+  }, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
+  return chaveVapidCache;
+}
+
+async function jwtVapid(env, audience) {
+  const enc = (o) => b64uDeBytes(new TextEncoder().encode(JSON.stringify(o)));
+  const corpo = `${enc({ typ: 'JWT', alg: 'ES256' })}.${enc({ aud: audience, exp: Math.floor(Date.now() / 1000) + 12 * 3600, sub: 'mailto:denis.souza@codeart.solutions' })}`;
+  const assinatura = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, await chaveVapid(env), new TextEncoder().encode(corpo));
+  return `${corpo}.${b64uDeBytes(assinatura)}`;
+}
+
+/* Devolve o status HTTP do servico de push (201 = entregue ao servico; 404/410 = inscricao morta). */
+async function enviarPush(env, endpoint) {
+  const jwt = await jwtVapid(env, new URL(endpoint).origin);
+  const resp = await fetch(endpoint, {
+    method: 'POST',
+    headers: { Authorization: `vapid t=${jwt}, k=${env.VAPID_PUBLIC}`, TTL: '86400', Urgency: 'normal', 'Content-Length': '0' }
+  });
+  return resp.status;
+}
+
+async function enviarPushLote(env, payload) {
+  const lista = (payload.endpoints || []).filter((e) => typeof e === 'string' && e.startsWith('https://')).slice(0, 100);
+  const gone = [];
+  let enviados = 0;
+  const falhas = [];
+  await Promise.all(lista.map(async (endpoint) => {
+    try {
+      const status = await enviarPush(env, endpoint);
+      if (status === 404 || status === 410) gone.push(endpoint);
+      else if (status >= 200 && status < 300) enviados++;
+      else falhas.push(status);
+    } catch (erro) {
+      falhas.push(String(erro.message || erro));
+    }
+  }));
+  return { enviados, gone, falhas };
+}
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -191,6 +247,20 @@ export default {
       }
     }
 
+    /* Chamada pelo Salesforce (CA_PushObraNotifier) quando sai uma atualizacao de obra - protegida
+       pelo mesmo token do restante da integracao, nunca exposta ao app do cliente. */
+    if (url.pathname === '/api/push-enviar' && request.method === 'POST') {
+      try {
+        const payload = await request.json();
+        if (!payload || !env.SF_APP_TOKEN || payload.token !== env.SF_APP_TOKEN) {
+          return comCors(new Response(JSON.stringify({ erro: 'token invalido' }), { status: 401, headers: { 'Content-Type': 'application/json' } }));
+        }
+        const resultado = await enviarPushLote(env, payload);
+        return comCors(new Response(JSON.stringify(resultado), { headers: { 'Content-Type': 'application/json' } }));
+      } catch (erro) {
+        return comCors(new Response(JSON.stringify({ erro: 'Falha ao processar: ' + erro.message }), { status: 500, headers: { 'Content-Type': 'application/json' } }));
+      }
+    }
     const ROTAS = {
       '/api/login': { apexPath: '/buyercare/login', camposObrigatorios: ['email'] },
       '/api/obra': { apexPath: '/buyercare/obra', camposObrigatorios: ['oportunidadeId'] },
@@ -201,6 +271,7 @@ export default {
       '/api/atendimento-novo': { apexPath: '/buyercare/atendimento-novo', camposObrigatorios: ['oportunidadeId', 'categoria', 'descricao'], camposOpcionais: ['ambiente'] },
       '/api/atendimento-anexo': { apexPath: '/buyercare/atendimento-anexo', camposObrigatorios: ['oportunidadeId', 'caseId', 'nomeArquivo', 'conteudoBase64'], camposOpcionais: ['tipoArquivo'] },
       '/api/atendimento-comentario': { apexPath: '/buyercare/atendimento-comentario', camposObrigatorios: ['oportunidadeId', 'protocolo', 'tipo'], camposOpcionais: ['texto', 'nota'] },
+      '/api/push-inscricao': { apexPath: '/buyercare/push-inscricao', camposObrigatorios: ['oportunidadeId', 'endpoint', 'acao'] },
       '/api/solicitacao-financeira': { apexPath: '/buyercare/solicitacao-financeira', camposObrigatorios: ['oportunidadeId', 'assunto', 'descricao'], camposOpcionais: ['parcelaInfo'] }
     };
     const rota = ROTAS[url.pathname];
