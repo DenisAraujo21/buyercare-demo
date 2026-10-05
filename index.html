@@ -694,6 +694,7 @@ function novoContratoReal(real, i){
 /* Aplica a resposta de /api/login (ou do primeiro acesso): comprador, contratos reais e unidade ativa. */
 function aplicarLogin(dados){
   DB.comprador.nome = dados.nome || DB.comprador.nome;
+  state.sessao = dados.token || null; /* o proxy exige a sessao em toda chamada de um imovel */
   if(Array.isArray(dados.contratos) && dados.contratos.length){
     DB.contratos = dados.contratos.map(novoContratoReal);
     state.contratoAtivo = DB.contratos[0].id;
@@ -702,6 +703,7 @@ function aplicarLogin(dados){
 }
 const CONTRATOS_DEMO = DB.contratos;
 function doLogout(){
+  state.sessao = null;
   DB.contratos = CONTRATOS_DEMO;
   state.tab = 'inicio';
   state.contratoAtivo = 'c1';
@@ -854,10 +856,17 @@ function formatarDataMesAno(iso){
   return meses[parseInt(m,10)-1]+'/'+y;
 }
 async function chamarProxy(rota, corpo){
+  /* Chamadas de um imovel levam a sessao do login; o servidor confere sessao + acesso + permissao. */
+  if(corpo && corpo.oportunidadeId && state.sessao) corpo = Object.assign({sessao:state.sessao}, corpo);
   const resp = await fetch(BUYERCARE_API_BASE + rota, {
     method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(corpo)
   });
   const dados = await resp.json().catch(()=>({erro:'resposta invalida'}));
+  if(dados && dados.sessaoExpirada && state.mode==='app'){
+    doLogout();
+    state.loginErro = 'Sua sessão expirou. Entre novamente.';
+    render();
+  }
   return {ok: resp.ok && !dados.erro, dados};
 }
 
