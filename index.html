@@ -913,7 +913,8 @@ async function carregarFinanceiroReal(contrato){
       dataPagamento: b.dataPagamento? formatarDataBr(b.dataPagamento) : null,
       status: b.status,
       codigoBarras: b.codigoBarras || null,
-      pix: b.pixCopiaECola || null
+      pix: b.pixCopiaECola || null,
+      comprovante: !!b.comprovanteEm /* comprovante ja enviado: "em analise" ate o financeiro dar baixa */
     }));
     contrato.financeiroReal = true;
     if(r.dados.valorTotalContrato) contrato.contrato.valor = r.dados.valorTotalContrato;
