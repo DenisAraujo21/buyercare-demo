@@ -1,11 +1,37 @@
-// Service worker minimo, so para o Chrome/Android reconhecer o app como instalavel
-// (criterio de "PWA instalavel"). Nao guarda nada em cache de proposito: o app ainda
-// esta em desenvolvimento ativo e mudando toda hora, entao a gente sempre quer a
-// versao mais nova direto da rede, nunca uma versao antiga presa em cache.
-self.addEventListener('install', () => self.skipWaiting());
-self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
-self.addEventListener('fetch', () => {}); // no-op: deixa tudo passar direto pra rede
+// Service worker do CodeLar: instalavel (PWA) + abre offline.
+// Estrategia: REDE PRIMEIRO para tudo do proprio app (o app muda toda hora, entao a versao nova
+// sempre ganha) e o cache serve so' de reserva quando a rede falha. Fontes e imagens sao estaticas:
+// cache primeiro. Chamadas ao proxy (outra origem) nunca passam pelo cache - dados reais e
+// pagamentos nao podem vir de uma copia antiga.
+const CACHE = 'codelar-v1';
+const BASE = ['./', 'index.html', 'manifest.json', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'];
 
+self.addEventListener('install', (e) => {
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(BASE)).catch(() => {}).then(() => self.skipWaiting()));
+});
+self.addEventListener('activate', (e) => {
+  e.waitUntil(caches.keys()
+    .then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+    .then(() => self.clients.claim()));
+});
+self.addEventListener('fetch', (e) => {
+  const req = e.request;
+  if (req.method !== 'GET') return;
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return; // proxy/API: sempre direto na rede
+  const estatico = /\/assets\//.test(url.pathname);
+  if (estatico) {
+    e.respondWith(caches.match(req).then((hit) => hit || fetch(req).then((res) => {
+      if (res.ok) { const copia = res.clone(); caches.open(CACHE).then((c) => c.put(req, copia)); }
+      return res;
+    })));
+    return;
+  }
+  e.respondWith(fetch(req).then((res) => {
+    if (res.ok) { const copia = res.clone(); caches.open(CACHE).then((c) => c.put(req, copia)); }
+    return res;
+  }).catch(() => caches.match(req).then((hit) => hit || (req.mode === 'navigate' ? caches.match('index.html') : Response.error()))));
+});
 // Avisos de obra (Web Push). O push chega SEM texto - o Salesforce so' diz "ha novidade" - entao
 // a mensagem e' sempre generica e nenhum dado do cliente passa pelo servico de push do navegador.
 self.addEventListener('push', (e) => {
