@@ -1248,8 +1248,9 @@ function cardProximaAcao(){
   }
   if(tipo==='entrega'){
     const en = state.en;
-    const titulo = en.step==='agendada' ? 'Entrega marcada: '+(en.data?en.data.dia+' '+en.data.num:'')+' às '+en.hora : 'Falta pouco para as chaves';
-    const texto = en.step==='agendada' ? 'Leve documento com foto e o ITBI quitado.' : 'Vistoria concluída. Escolha o dia para buscar as chaves e confira os documentos.';
+    const cancelada = !!(c.pv && c.pv.entregaCancelada);
+    const titulo = en.step==='agendada' ? 'Entrega marcada: '+(en.data?en.data.dia+' '+en.data.num:'')+' às '+en.hora : cancelada ? 'Entrega cancelada — escolha outra data' : 'Falta pouco para as chaves';
+    const texto = en.step==='agendada' ? 'Leve documento com foto e o ITBI quitado.' : cancelada ? 'Motivo: '+(c.pv.entregaCancelada.motivo||'não informado')+'.' : 'Vistoria concluída. Escolha o dia para buscar as chaves e confira os documentos.';
     return `<div class="card dark lg" style="padding:18px;margin-bottom:18px;"><span class="ring" style="top:-40px;right:-40px;width:120px;height:120px;"></span>
       <div style="display:flex;align-items:center;gap:14px;position:relative;">
         <div class="center" style="flex:0 0 auto;"><div class="disp" style="font-size:40px;line-height:1;">${x.enDias}</div><div style="font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#CBD1D5;">dias</div></div>
@@ -1258,8 +1259,9 @@ function cardProximaAcao(){
   }
   if(tipo==='vistoria'){
     const vi = state.vi;
-    const titulo = vi.step==='agendar' ? 'Marcar a vistoria do imóvel' : vi.step==='assinada' ? 'Vistoria concluída' : 'Vistoria marcada: '+(vi.data?vi.data.dia+' '+vi.data.num+'/'+vi.data.mes:'')+' às '+vi.hora;
-    const texto = vi.step==='agendar' ? 'A obra está na reta final. Escolha um dia para conferir o imóvel com nosso técnico antes da entrega.' : vi.step==='assinada' ? 'Termo assinado. Próximo passo: entrega das chaves.' : 'Leve documento com foto. O checklist fica disponível aqui no dia.';
+    const cancelada = !!(c.pv && c.pv.vistoriaCancelada);
+    const titulo = vi.step==='agendar' ? (cancelada ? 'Vistoria cancelada — escolha outra data' : 'Marcar a vistoria do imóvel') : vi.step==='assinada' ? 'Vistoria concluída' : 'Vistoria marcada: '+(vi.data?vi.data.dia+' '+vi.data.num+'/'+vi.data.mes:'')+' às '+vi.hora;
+    const texto = vi.step==='agendar' ? (cancelada ? 'Motivo: '+(c.pv.vistoriaCancelada.motivo||'não informado')+'. Escolha um novo dia.' : 'A obra está na reta final. Escolha um dia para conferir o imóvel com nosso técnico antes da entrega.') : vi.step==='assinada' ? 'Termo assinado. Próximo passo: entrega das chaves.' : 'Leve documento com foto. O checklist fica disponível aqui no dia.';
     return acaoCard('cal','sun',titulo,texto, btn(vi.step==='agendar'?'Escolher data':'Ver detalhes',"go('vistoria')",'btn-primary','sm'));
   }
   if(tipo==='parcela'){
@@ -1941,6 +1943,14 @@ function screenPersonalizar(){
   return {title:'Personalizar o imóvel', body: state.pz.confirmado ? feito : encerrado ? fechado : aberto};
 }
 
+/* Aviso quando a equipe cancela um agendamento: mostra o motivo e pede nova data. */
+function avisoCancelamento(c, tipo){
+  const k = c.pv && c.pv[tipo==='vistoria'?'vistoriaCancelada':'entregaCancelada'];
+  if(!k) return '';
+  const quando = k.agenda ? ' de '+rotuloData(slotDe(k.agenda))+' às '+k.agenda.hora : '';
+  return noteBox('warning','alert','A '+(tipo==='vistoria'?'vistoria':'entrega das chaves')+quando+' foi cancelada', (k.motivo ? 'Motivo: '+escHtml(k.motivo)+'. ' : '')+'Escolha uma nova data abaixo.');
+}
+
 /* ---------- Vistoria ----------
    Contratos reais: agendamento, checklist assinado e ressalvas (viram Case de assistencia) no Salesforce
    (CA_Vistoria__c / CA_VistoriaItem__c). Demo: tudo local. */
@@ -1989,7 +1999,7 @@ function screenVistoria(){
   const ressalvas = (c.pv && c.pv.vistoria && c.pv.vistoria.ressalvas != null) ? c.pv.vistoria.ressalvas : (vi.nok != null ? vi.nok : nok);
   let corpo = '';
   if(vi.step==='agendar'){
-    corpo = `<h2 class="h2">Escolha o dia da sua vistoria</h2>
+    corpo = `${avisoCancelamento(c,'vistoria')}<h2 class="h2">Escolha o dia da sua vistoria</h2>
       <p class="lead">Você vai conferir o imóvel com um técnico da Codeart antes da entrega. Leva cerca de 1h30. Pode levar um acompanhante.</p>
       ${diasHtml(sl.datas, vi.data, 'viData')}<label class="lb">Horário</label>${horasHtml(sl.horasVistoria, vi.hora, 'viHora')}
       <div class="pill-note" style="margin-bottom:20px;"><b>Leve com você:</b> documento com foto e, se tiver, a lista de itens que quer conferir com atenção.</div>
@@ -2055,7 +2065,7 @@ function screenEntrega(){
   const entregue = c.pv && c.pv.entrega && c.pv.entrega.status==='Realizada';
   let corpo = '';
   if(en.step==='agendar'){
-    corpo = `<div class="card dark lg" style="padding:22px 20px;margin-bottom:18px;"><span class="ring" style="top:-50px;right:-50px;width:150px;height:150px;border-width:20px;"></span>
+    corpo = `${avisoCancelamento(c,'entrega')}<div class="card dark lg" style="padding:22px 20px;margin-bottom:18px;"><span class="ring" style="top:-50px;right:-50px;width:150px;height:150px;border-width:20px;"></span>
         ${eyebrow('Faltam','m0" style="color:#CBD1D5;position:relative')}<div class="disp" style="font-size:56px;line-height:1;margin:6px 0 4px;position:relative;">${x.enDias}<span style="font-size:20px;font-weight:400;color:#CBD1D5;"> dias</span></div>
         <p style="margin:0;font-size:15px;color:#CBD1D5;position:relative;">para a entrega das chaves · previsão ${escHtml(c.obra.previsao)}</p></div>
       <h2 class="h2" style="font-size:22px;">Escolha quando quer buscar as chaves</h2>
