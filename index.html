@@ -231,6 +231,8 @@ textarea.inp{padding:12px 14px;resize:vertical;min-height:100px}
 .rate{display:flex;justify-content:space-between;gap:6px;margin-bottom:8px}
 .rate button{flex:1;aspect-ratio:1;max-width:60px;border-radius:14px;border:2px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-display);font-size:20px;font-weight:600;cursor:pointer}
 .rate button.on{background:var(--primary-bg);color:var(--primary-text);border-color:var(--primary-bg)}
+.rate11{flex-wrap:wrap;gap:6px}
+.rate11 button{flex:0 0 calc(25% - 5px);max-width:none;aspect-ratio:auto;height:44px;font-size:17px;border-radius:12px}
 
 </style>
 </head>
@@ -947,8 +949,8 @@ async function carregarAtendimentoReal(contrato){
 /* ---------- derivados usados em varias telas ---------- */
 const MESES_ABREV = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 const MESES_EXT = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
-const TONE = {Pago:'success', Aprovado:'success', 'Concluído':'success', Atrasado:'danger', 'Indisponível':'neutral', Pendente:'warning', 'Em andamento':'sky', 'Em análise':'sky', Novo:'sky'};
-const STATUS_LABEL = {Pago:'Pago', Aprovado:'Recebido', 'Concluído':'Resolvido', Atrasado:'Em atraso', 'Indisponível':'Em breve', Pendente:'Falta enviar', 'Em andamento':'Em andamento', 'Em análise':'Em análise'};
+const TONE = {Pago:'success', Aprovado:'success', 'Concluído':'success', Atrasado:'danger', 'Indisponível':'neutral', Pendente:'warning', 'Em andamento':'sky', 'Aguardando você':'warning', 'Em análise':'sky', Novo:'sky'};
+const STATUS_LABEL = {Pago:'Pago', Aprovado:'Recebido', 'Concluído':'Resolvido', Atrasado:'Em atraso', 'Indisponível':'Em breve', Pendente:'Falta enviar', 'Em andamento':'Em andamento', 'Aguardando você':'Aguardando você', 'Em análise':'Em análise'};
 const tone = st => TONE[st] || 'neutral';
 const statusLabel = st => STATUS_LABEL[st] || st;
 const toneVar = t => ({success:'var(--success)', danger:'var(--danger)', warning:'var(--warning)', sky:'var(--accent)'})[t] || 'var(--border)';
@@ -2149,30 +2151,41 @@ function screenAtendimentoList(){
       : `<div class="center muted" style="padding:24px 16px;">${mascote('sentado',120,'margin-bottom:8px;')}<p style="margin:0;font-size:15px;line-height:1.5;">Nenhum pedido aberto para esta unidade.</p></div>`}`;
   return {title:'Assistência técnica', body};
 }
+function conversaAtendimentoHtml(raw){
+  const msgs = Array.isArray(raw.mensagens) ? raw.mensagens : [];
+  if(!msgs.length) return '';
+  return `${eyebrow('Conversa','mt" style="margin:20px 0 10px')}<div class="card" style="padding:4px 16px;">${msgs.map(m=>`<div style="padding:12px 0;border-bottom:1px solid var(--border);"><span class="sm" style="display:block;margin-bottom:2px;"><b>${m.de==='cliente'?'Você':'Equipe CodeLar'}</b> · ${escHtml(formatarDataBr((m.quando||'').slice(0,10)))}</span><span style="font-size:15px;line-height:1.5;white-space:pre-line;">${escHtml(m.texto)}</span></div>`).join('')}</div>`;
+}
 function screenAtendimentoDetail({id}){
   const c = contratoAtivo();
   const raw = c.atendimentos.find(a => (c.atendimentoReal ? a.protocolo : a.id)===id);
   if(!raw) return {title:'Pedido', body:'<p class="muted">Pedido não encontrado.</p>'};
   const a = atendimentoView(raw);
   const concluido = a.status==='Concluído';
-  const etapas = ['Pedido recebido','Técnico agendado','Em execução','Resolvido'];
-  const idx = concluido ? 4 : raw.agendado ? 2 : 1;
+  const posVenda = !!raw.posVenda;
+  const etapas = posVenda ? ['Pedido recebido','Em atendimento','Resolvido'] : ['Pedido recebido','Técnico agendado','Em execução','Resolvido'];
+  const idx = posVenda ? (concluido ? 3 : (a.status==='Novo' ? 1 : 2)) : (concluido ? 4 : raw.agendado ? 2 : 1);
   const itens = etapas.map((n,i)=>({nome:n, sub: i===0 ? 'em '+(c.atendimentoReal ? formatarDataBr((raw.abertoEm||'').slice(0,10)) : raw.data) : i===idx ? (raw.sla||'') : i<idx ? 'Concluído' : ''}));
   const problema = c.atendimentoReal ? (raw.categoria||raw.assunto) : raw.tipo;
   const onde = c.atendimentoReal ? '—' : raw.ambiente;
   const aberto = c.atendimentoReal ? formatarDataBr((raw.abertoEm||'').slice(0,10)) : raw.data;
+  const aguardando = a.status==='Aguardando você';
+  const acao = concluido
+    ? (posVenda
+        ? (raw.pesquisaId ? btn(ic('star',18)+' Avaliar atendimento',`abrirPesquisa('posvenda','${jsq(a.protocolo)}','${jsq(raw.pesquisaId)}')`,'btn-primary','lg') : '')
+        : btn(ic('star',18)+' Avaliar atendimento',`abrirPesquisa('atendimento','${jsq(a.protocolo)}')`,'btn-primary','lg'))
+    : btn(posVenda ? (aguardando ? 'Responder à equipe' : 'Mandar mensagem à equipe') : 'Mandar mensagem ao técnico',c.atendimentoReal?`go('atendimentoMensagem',{protocolo:'${jsq(a.protocolo)}'})`:"toast('Mensagem enviada ao técnico')",aguardando?'btn-primary':'btn-secondary');
   const body = `
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px;"><div>${eyebrow('Número do pedido','m0')}<b class="disp tnum" style="font-size:20px;">${escHtml(a.protocolo)}</b></div>${badge(a.tone,a.label)}</div>
     <div class="card pad" style="padding:16px 16px 4px;">${timelineHtml(itens, idx)}</div>
-    <div class="card"><div class="kv"><span class="k">Problema</span><span class="v">${escHtml(problema)}</span></div>
+    <div class="card"><div class="kv"><span class="k">${posVenda?'Assunto':'Problema'}</span><span class="v">${escHtml(problema)}</span></div>
       ${onde!=='—'?`<div class="kv"><span class="k">Onde</span><span class="v">${escHtml(onde)}</span></div>`:''}
       <div class="kv"><span class="k">Aberto em</span><span class="v">${escHtml(aberto)}</span></div>
       <div style="padding:14px 16px;font-size:15px;border-top:1px solid var(--border);"><span class="muted" style="display:block;margin-bottom:4px;">O que você contou</span><span style="line-height:1.5;white-space:pre-line;">${escHtml(raw.descricao)}</span></div></div>
-    ${concluido ? btn(ic('star',18)+' Avaliar atendimento',`abrirPesquisa('atendimento','${jsq(a.protocolo)}')`,'btn-primary','lg')
-      : btn('Mandar mensagem ao técnico',c.atendimentoReal?`go('atendimentoMensagem',{protocolo:'${jsq(a.protocolo)}'})`:"toast('Mensagem enviada ao técnico')",'btn-secondary')}`;
+    ${conversaAtendimentoHtml(raw)}
+    ${acao}`;
   return {title:'Pedido', body};
-}
-function screenAtendimentoMensagem({protocolo}){
+}function screenAtendimentoMensagem({protocolo}){
   const body = `
     <p class="muted" style="margin:0 0 16px;font-size:15px;line-height:1.5;">Sua mensagem fica registrada no pedido <b>${escHtml(protocolo)}</b> e o time técnico vê por lá.</p>
     <div class="field"><label class="lb" for="am-texto">Mensagem</label><textarea class="inp" id="am-texto" maxlength="1000" placeholder="Ex: o vazamento voltou ontem à noite..."></textarea></div>
@@ -2307,10 +2320,11 @@ function verPedidoCriado(){
 /* ---------- Pesquisa de satisfacao ---------- */
 const PS_CTX = {
   atendimento:{contexto:'Assistência técnica', pergunta:'Como foi o atendimento do seu pedido?', sub:'O que mais pesou na sua nota?', tags:['Rapidez','Educação do técnico','Qualidade do reparo','Comunicação','Limpeza no local'], agr:'Sua nota vai para o técnico e para a equipe de pós‑venda. Se algo ficou pendente, abra um novo pedido que a gente resolve.'},
+  posvenda:{contexto:'Pós-venda', pergunta:'Como foi o atendimento do seu pedido?', sub:'O que mais pesou na sua nota?', tags:['Rapidez','Clareza','Educação','Solução do problema'], agr:'Obrigado! Sua nota chega direto para a equipe de pós‑venda.', escala:11},
   vistoria:{contexto:'Vistoria', pergunta:'Como foi a sua vistoria?', sub:'O que mais pesou na sua nota?', tags:['Pontualidade','Clareza do técnico','Tempo da visita','Registro das ressalvas','Estado do imóvel'], agr:'Obrigado! Suas ressalvas já estão com a equipe de obra e você acompanha cada uma em Ajuda.'},
 };
-function abrirPesquisa(contexto, protocolo){
-  state.ps = {contexto, protocolo, nota:0, tags:[], comentario:'', enviada:false, enviando:false};
+function abrirPesquisa(contexto, protocolo, pesquisaId){
+  state.ps = {contexto, protocolo, pesquisaId, nota:(contexto==='posvenda' ? -1 : 0), tags:[], comentario:'', enviada:false, enviando:false};
   if(contexto==='vistoria' && state.tab==='inicio') go('pesquisa'); else go('pesquisa');
 }
 function psNota(n){ state.ps.nota = n; render(); }
@@ -2319,6 +2333,15 @@ async function psEnviar(){
   const ps = state.ps, c = contratoAtivo();
   if(ps.enviando) return;
   ps.enviando = true; render();
+  /* pesquisa do pos-venda (nota de 0 a 10): grava em CA_PesquisaSatisfacao__c ligada ao caso */
+  if(ps.contexto==='posvenda' && ps.pesquisaId){
+    const texto = [ps.tags.length?'Pesou na nota: '+ps.tags.join(', '):'', ps.comentario.trim()].filter(Boolean).join('\n');
+    try{
+      const r = await chamarProxy('/api/pesquisa', {oportunidadeId:c.oportunidadeId, acao:'responder', pesquisaId:ps.pesquisaId, nota:ps.nota, comentario: texto||undefined});
+      if(!r.ok || (r.dados && r.dados.erro)){ toast((r.dados && r.dados.erro) || 'Não foi possível enviar agora.'); ps.enviando = false; render(); return; }
+      await carregarAtendimentoReal(c);
+    }catch(e){ toast('Falha de conexão. Tente novamente.'); ps.enviando = false; render(); return; }
+  }
   /* avaliacao de atendimento: vai para o Salesforce (comentario publico no Case com a nota) */
   if(ps.contexto==='atendimento' && c.atendimentoReal && ps.protocolo){
     const texto = [ps.tags.length?'Pesou na nota: '+ps.tags.join(', '):'', ps.comentario.trim()].filter(Boolean).join('\n');
@@ -2335,9 +2358,9 @@ function screenPesquisa(){
   const corpo = !ps.enviada ? `
     ${eyebrow(def.contexto,'" style="margin-bottom:6px')}<h2 class="h2">${def.pergunta}</h2>
     <p class="lead" style="margin-bottom:20px;">Leva menos de um minuto. Sua resposta vai direto para quem cuidou do seu caso.</p>
-    <div class="rate">${[1,2,3,4,5].map(n=>`<button class="${ps.nota===n?'on':''}" aria-label="Nota ${n}" onclick="psNota(${n})">${n}</button>`).join('')}</div>
+    <div class="rate${def.escala?' rate11':''}">${(def.escala?[0,1,2,3,4,5,6,7,8,9,10]:[1,2,3,4,5]).map(n=>`<button class="${ps.nota===n?'on':''}" aria-label="Nota ${n}" onclick="psNota(${n})">${n}</button>`).join('')}</div>
     <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:20px;"><span>Péssimo</span><span>Excelente</span></div>
-    ${ps.nota>0 ? `<label class="lb">${ps.nota>=4?'O que foi bem?':def.sub}</label>
+    ${(def.escala ? ps.nota>=0 : ps.nota>0) ? `<label class="lb">${ps.nota>=(def.escala?9:4)?'O que foi bem?':def.sub}</label>
       <div class="chips" style="margin-bottom:16px;">${def.tags.map(t=>`<button class="chip ${ps.tags.includes(t)?'on':''}" onclick="psTag('${jsq(t)}')">${t}</button>`).join('')}</div>
       <textarea class="inp" id="ps-coment" placeholder="Quer contar mais alguma coisa? (opcional)" oninput="state.ps.comentario=this.value" style="min-height:80px;margin-bottom:20px;">${escHtml(ps.comentario)}</textarea>
       ${btn(ps.enviando?'Enviando...':'Enviar avaliação','psEnviar()','btn-primary','lg')}` : ''}`
