@@ -20,6 +20,7 @@
      POST /api/documento-arquivo Body: { "oportunidadeId": "...", "contentVersionId": "..." }
      POST /api/atendimento       Body: { "oportunidadeId": "..." }
      POST /api/atendimento-novo  Body: { "oportunidadeId": "...", "categoria": "...", "ambiente": "...", "descricao": "..." }
+                              (opcional) "itens": [{ "ambiente", "categoria", "descricao" }, ...] - varios itens no mesmo pedido
      POST /api/atendimento-anexo Body: { "oportunidadeId": "...", "caseId": "...", "nomeArquivo": "...", "tipoArquivo": "...", "conteudoBase64": "..." }
      POST /api/atendimento-comentario Body: { "oportunidadeId": "...", "protocolo": "...", "tipo": "mensagem|avaliacao", "texto": "...", "nota": 5 }
      POST /api/solicitacao-financeira Body: { "oportunidadeId": "...", "assunto": "...", "descricao": "...", "parcelaInfo": "..." }
@@ -228,6 +229,39 @@ async function enviarPushLote(env, payload) {
   }));
   return { enviados, gone, falhas };
 }
+/* Autorizacao por sessao: toda rota que mexe num imovel exige a sessao do login (campo "sessao") e o
+   Salesforce confere (CA_RestBuyerCareAcesso) que ela e' valida, que o dono tem acesso ao imovel e,
+   nas rotas que alteram dados, que o acesso nao e' so "Acompanhar". Login e primeiro acesso ficam de
+   fora (e' como a pessoa obtem a sessao). Resposta positiva fica 60 s em memoria para nao somar uma
+   ida ao Salesforce a cada toque; negativa nunca e' guardada. */
+const ROTAS_SEM_SESSAO = new Set(['/api/login', '/api/primeiro-acesso']);
+const ROTAS_QUE_ALTERAM = new Set(['/api/atendimento-novo', '/api/atendimento-anexo', '/api/atendimento-comentario', '/api/solicitacao-financeira']);
+const cacheAcesso = new Map();
+
+async function verificarAcesso(env, sessao, oportunidadeId, escrita) {
+  const chave = `${sessao}|${oportunidadeId}|${escrita ? 'w' : 'r'}`;
+  const hit = cacheAcesso.get(chave);
+  if (hit && hit > Date.now()) return { ok: true };
+  const accessToken = await obterAccessToken(env);
+  const resp = await fetch(`${env.SF_LOGIN_URL}/services/apexrest/buyercare/acesso`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: env.SF_APP_TOKEN, sessao, oportunidadeId, escrita: !!escrita })
+  });
+  const r = await resp.json().catch(() => null);
+  if (!resp.ok || !r) return { ok: false, motivo: 'Nao foi possivel validar o acesso agora.', indisponivel: true };
+  if (r.ok) {
+    if (cacheAcesso.size > 500) cacheAcesso.clear();
+    cacheAcesso.set(chave, Date.now() + 60000);
+  }
+  return r;
+}
+
+function respostaNegada(r) {
+  const status = r.indisponivel ? 503 : (r.sessaoExpirada ? 401 : 403);
+  return comCors(new Response(JSON.stringify({ erro: r.motivo || 'Acesso negado.', sessaoExpirada: !!r.sessaoExpirada }), { status, headers: { 'Content-Type': 'application/json' } }));
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -242,6 +276,8 @@ export default {
         if (!payload || !payload.oportunidadeId || !payload.mensagem) {
           return comCors(new Response(JSON.stringify({ erro: 'Campo(s) obrigatorio(s) ausente(s): oportunidadeId, mensagem' }), { status: 400, headers: { 'Content-Type': 'application/json' } }));
         }
+        const acesso = await verificarAcesso(env, payload.sessao, payload.oportunidadeId, false);
+        if (!acesso.ok) return respostaNegada(acesso);
         const resultado = await responderAgente(env, payload);
         return comCors(new Response(JSON.stringify(resultado), { headers: { 'Content-Type': 'application/json' } }));
       } catch (erro) {
@@ -270,9 +306,10 @@ export default {
       '/api/documentos': { apexPath: '/buyercare/documentos', camposObrigatorios: ['oportunidadeId'] },
       '/api/documento-arquivo': { apexPath: '/buyercare/documento-arquivo', camposObrigatorios: ['oportunidadeId', 'contentVersionId'] },
       '/api/atendimento': { apexPath: '/buyercare/atendimento', camposObrigatorios: ['oportunidadeId'] },
-      '/api/atendimento-novo': { apexPath: '/buyercare/atendimento-novo', camposObrigatorios: ['oportunidadeId', 'categoria', 'descricao'], camposOpcionais: ['ambiente'] },
+      '/api/atendimento-novo': { apexPath: '/buyercare/atendimento-novo', camposObrigatorios: ['oportunidadeId', 'categoria', 'descricao'], camposOpcionais: ['ambiente', 'itens'] },
       '/api/atendimento-anexo': { apexPath: '/buyercare/atendimento-anexo', camposObrigatorios: ['oportunidadeId', 'caseId', 'nomeArquivo', 'conteudoBase64'], camposOpcionais: ['tipoArquivo'] },
       '/api/atendimento-comentario': { apexPath: '/buyercare/atendimento-comentario', camposObrigatorios: ['oportunidadeId', 'protocolo', 'tipo'], camposOpcionais: ['texto', 'nota'] },
+  '/api/pesquisa': { apexPath: '/buyercare/pesquisa', camposObrigatorios: ['oportunidadeId', 'acao'], camposOpcionais: ['pesquisaId', 'nota', 'comentario'] },
       '/api/pos-venda': { apexPath: '/buyercare/pos-venda', camposObrigatorios: ['oportunidadeId', 'acao'], camposOpcionais: ['dados'] },
       '/api/primeiro-acesso': { apexPath: '/buyercare/primeiro-acesso', camposObrigatorios: ['acao'], camposOpcionais: ['cpf', 'nascimento', 'celular', 'desafioId', 'codigo'] },
       '/api/push-inscricao': { apexPath: '/buyercare/push-inscricao', camposObrigatorios: ['oportunidadeId', 'endpoint', 'acao'] },
@@ -306,6 +343,11 @@ export default {
     }
 
     try {
+      if (!ROTAS_SEM_SESSAO.has(url.pathname)) {
+        const altera = ROTAS_QUE_ALTERAM.has(url.pathname) || (url.pathname === '/api/pos-venda' && payload.acao !== 'estado') || (url.pathname === '/api/pesquisa' && payload.acao === 'responder');
+        const acesso = await verificarAcesso(env, payload.sessao, payload.oportunidadeId, altera);
+        if (!acesso.ok) return respostaNegada(acesso);
+      }
       const accessToken = await obterAccessToken(env);
 
       const corpoRequisicao = { token: env.SF_APP_TOKEN };
