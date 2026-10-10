@@ -1855,7 +1855,7 @@ function mesDoComunicado(com){
   return nome.charAt(0).toUpperCase()+nome.slice(1);
 }
 function pedirPorGarantia(item){
-  state.na = {step:2, ambiente:'', tipo:item, descricao:'', anexos:[], periodos:[], enviando:false};
+  state.na = naNovo(2, item);
   switchTab('ajuda','novoAtendimento');
 }
 
@@ -2137,15 +2137,18 @@ function atendimentoView(a){
 function linhaAtendimento(a){
   return `<button class="row" onclick="go('atendimentoDetail',{id:'${jsq(a.chave)}'})"><span class="grow"><span class="t">${escHtml(a.titulo)}</span><span class="s">${escHtml(a.sub)}</span></span>${badge(a.tone,a.label)}</button>`;
 }
+/* Garantia e assistencia so existem depois da entrega das chaves (o servidor tambem recusa antes disso). */
+function assistenciaLiberada(){ return ctx().fasePos; }
 function novoPedido(){
-  state.na = {step:1, ambiente:'', tipo:'', descricao:'', anexos:[], periodos:[], enviando:false};
+  if(!assistenciaLiberada()){ toast('A assistência técnica abre depois da entrega das chaves.'); return; }
+  state.na = naNovo(1, '');
   if(state.tab!=='ajuda') switchTab('ajuda','novoAtendimento'); else go('novoAtendimento');
 }
 function screenAtendimentoList(){
   const c = contratoAtivo();
   const lista = c.atendimentos.map(atendimentoView);
   const body = `
-    ${btn(ic('plus',18)+' Novo pedido de assistência','novoPedido()','btn-primary','lg')}
+    ${assistenciaLiberada() ? btn(ic('plus',18)+' Novo pedido de assistência','novoPedido()','btn-primary','lg') : noteBox('accent','alert','Disponível depois da entrega das chaves','A garantia e a assistência técnica começam quando você recebe as chaves. Até lá, fale com a equipe pelo chat.')}
     ${eyebrow('Seus pedidos','mt" style="margin:24px 0 12px')}
     ${lista.length ? `<div class="card">${lista.map(linhaAtendimento).join('')}</div>`
       : `<div class="center muted" style="padding:24px 16px;">${mascote('sentado',120,'margin-bottom:8px;')}<p style="margin:0;font-size:15px;line-height:1.5;">Nenhum pedido aberto para esta unidade.</p></div>`}`;
@@ -2182,10 +2185,105 @@ function screenAtendimentoDetail({id}){
       ${onde!=='—'?`<div class="kv"><span class="k">Onde</span><span class="v">${escHtml(onde)}</span></div>`:''}
       <div class="kv"><span class="k">Aberto em</span><span class="v">${escHtml(aberto)}</span></div>
       <div style="padding:14px 16px;font-size:15px;border-top:1px solid var(--border);"><span class="muted" style="display:block;margin-bottom:4px;">O que você contou</span><span style="line-height:1.5;white-space:pre-line;">${escHtml(raw.descricao)}</span></div></div>
+    ${itensAtendimentoHtml(raw)}
+    ${assistenciasAtendimentoHtml(raw)}
+    ${visitaAtendimentoHtml(raw)}
     ${conversaAtendimentoHtml(raw)}
     ${acao}`;
   return {title:'Pedido', body};
-}function screenAtendimentoMensagem({protocolo}){
+}/* ---------- Visita técnica: o cliente escolhe o dia e a janela de chegada ----------
+   A equipe libera pelo Salesforce ("Deixar o cliente escolher no portal"); o app mostra só os horários livres de técnicos com a
+   habilidade exigida e o Salesforce escolhe o técnico e despacha. Contratos de demonstração não têm esse fluxo. */
+/* ---------- Pedido de assistência técnica com itens: o cliente abre UM pedido; a equipe faz a triagem de cada item e abre a assistência técnica por sistema ---------- */
+const SITUACAO_ITEM = {'Em análise':'sky', 'Será atendido':'success', 'Não será atendido':'neutral'};
+function itensAtendimentoHtml(raw){
+  const itens = Array.isArray(raw.itens) ? raw.itens : [];
+  if(!itens.length) return '';
+  const linhas = itens.map(i=>`<div style="padding:12px 16px;border-top:1px solid var(--border);">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;"><b style="font-size:15px;">${escHtml(i.ambiente||'Item')}${i.sistema?' · '+escHtml(i.sistema):''}</b>${badge(SITUACAO_ITEM[i.situacao]||'neutral', i.situacao)}</div>
+      <p class="muted" style="margin:4px 0 0;font-size:14px;line-height:1.45;">${escHtml(i.descricao||'')}</p>
+      ${i.motivo?`<p style="margin:6px 0 0;font-size:13px;line-height:1.4;color:var(--muted);"><b>Por quê:</b> ${escHtml(i.motivo)}</p>`:''}
+      ${i.assistencia?`<p class="sm" style="margin:6px 0 0;">Assistência técnica ${escHtml(i.assistencia)}</p>`:''}
+    </div>`).join('');
+  return `<div class="card" style="margin-top:14px;"><div style="padding:14px 16px 12px;">${eyebrow('Itens do pedido','m0')}<p class="sm" style="margin:2px 0 0;">A equipe analisa cada item e avisa o que será atendido.</p></div>${linhas}</div>`;
+}
+/* Cada assistência técnica aberta pela equipe: o andamento e a visita (o cliente escolhe o horário quando a equipe libera). */
+function assistenciasAtendimentoHtml(raw){
+  const lista = Array.isArray(raw.assistencias) ? raw.assistencias : [];
+  return lista.map(a=>`<div class="card" style="margin-top:14px;"><div style="padding:14px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;"><span>${eyebrow('Assistência técnica '+escHtml(a.protocolo),'m0')}<b style="font-size:16px;">${escHtml(a.sistema||'')}</b></span>${badge(tone(a.status), statusLabel(a.status))}</div>${visitaAtendimentoHtml(a).replace('margin-top:14px;','margin:0;border-radius:0;box-shadow:none;border-top:1px solid var(--border);')}</div>`).join('');
+}
+function visitaAtendimentoHtml(raw){
+  if(raw.posVenda) return '';
+  if(raw.visita){
+    const v = raw.visita, d = (v.data||'').split('-');
+    const quando = d.length===3 ? d[2]+'/'+d[1] : '';
+    return `<div class="card pad" style="padding:16px;margin-top:14px;">${eyebrow('Visita técnica marcada','m0')}<div class="disp" style="font-size:22px;line-height:1.2;margin-top:4px;">${quando} · ${escHtml(v.inicio)} às ${escHtml(v.fim)}</div>${v.tecnico?`<p class="muted" style="margin:6px 0 0;font-size:14px;">Técnico: ${escHtml(v.tecnico)}. Ele chega nessa janela de horário.</p>`:''}</div>`;
+  }
+  if(raw.escolheVisita){
+    return `<div class="card pad" style="padding:16px;margin-top:14px;">${eyebrow('Visita técnica','m0')}<b style="font-size:16px;display:block;margin:2px 0 4px;">Escolha o melhor horário para a visita</b><p class="muted" style="margin:0 0 12px;font-size:14px;line-height:1.5;">Mostramos só os dias e janelas em que há técnico disponível.</p>${btn('Escolher dia e horário',`abrirVisitaHorario('${jsq(raw.protocolo)}')`,'btn-primary')}</div>`;
+  }
+  return '';
+}
+function abrirVisitaHorario(protocolo){
+  state.vh = {protocolo, dias:null, data:null, janela:null, erro:'', enviando:false};
+  go('visitaHorario', {protocolo});
+  carregarVisitaHorarios(protocolo);
+}
+async function carregarVisitaHorarios(protocolo){
+  const c = contratoAtivo();
+  try{
+    const r = await chamarProxy('/api/pos-venda', {oportunidadeId:c.oportunidadeId, acao:'assistencia-horarios', dados:{protocolo}});
+    if(!state.vh || state.vh.protocolo!==protocolo) return;
+    if(!r.ok){ state.vh.erro = r.dados.erro || 'Não foi possível carregar os horários.'; state.vh.dias = []; }
+    else { state.vh.dias = r.dados.dias || []; if(!state.vh.dias.length) state.vh.erro = 'No momento não há horários livres. A equipe vai entrar em contato.'; }
+  }catch(e){ if(state.vh){ state.vh.erro = 'Falha de conexão. Tente novamente.'; state.vh.dias = []; } }
+  render();
+}
+function vhData(iso){ const d = state.vh.dias.find(x=>x.data===iso); state.vh.data = d; if(d && d.janelas.indexOf(state.vh.janela)<0) state.vh.janela = null; render(); }
+function vhJanela(j){ state.vh.janela = j; render(); }
+const rotuloJanela = j => { const [a,b] = (j||'').split('-'); return a && b ? a.replace(':00','h').replace(':','h')+' às '+b.replace(':00','h').replace(':','h') : j; };
+function screenVisitaHorario({protocolo}){
+  const vh = state.vh || {};
+  let body;
+  if(vh.dias===null || vh.dias===undefined){
+    body = `<p class="muted center" style="padding:32px 0;">Buscando horários livres...</p>`;
+  } else if(!vh.dias.length){
+    body = `<div class="center muted" style="padding:24px 16px;">${mascote('sentado',120,'margin-bottom:8px;')}<p style="margin:0;font-size:15px;line-height:1.5;">${escHtml(vh.erro||'Sem horários livres no momento.')}</p></div>`;
+  } else {
+    const datas = vh.dias.map(d=>({iso:d.data, dia:d.dia, num:d.num, mes:d.mes}));
+    const sel = vh.data ? {iso:vh.data.data} : null;
+    const janelas = vh.data ? vh.data.janelas : [];
+    body = `<h2 class="h2">Escolha o dia da visita</h2>
+      <p class="lead">O técnico chega dentro da janela de horário que você escolher. Se precisar mudar depois, fale com a equipe pelo pedido.</p>
+      ${diasHtml(datas, sel, 'vhData')}
+      <label class="lb">Janela de chegada</label>
+      ${vh.data ? `<div class="chips" style="margin-bottom:20px;">${janelas.map(j=>`<button class="chip ${vh.janela===j?'on':''}" onclick="vhJanela('${j}')">${rotuloJanela(j)}</button>`).join('')}</div>` : `<p class="sm" style="margin:0 0 20px;">Escolha primeiro o dia.</p>`}
+      ${vh.erro ? `<p class="sm" style="color:var(--warning-text,#8c4b02);margin:0 0 12px;">${escHtml(vh.erro)}</p>` : ''}
+      <button class="btn btn-primary lg" id="vh-confirmar" onclick="vhConfirmar()" ${vh.enviando?'disabled':''}>${vh.enviando?'Agendando...':'Confirmar visita'}</button>`;
+  }
+  return {title:'Horário da visita', body};
+}
+async function vhConfirmar(){
+  const vh = state.vh;
+  if(!vh || !vh.data || !vh.janela){ toast('Escolha o dia e a janela de chegada.'); return; }
+  const c = contratoAtivo();
+  if(!podeAgir(c)) return;
+  vh.enviando = true; vh.erro = ''; render();
+  try{
+    const r = await chamarProxy('/api/pos-venda', {oportunidadeId:c.oportunidadeId, acao:'assistencia-agendar', dados:{protocolo:vh.protocolo, data:vh.data.data, janela:vh.janela}});
+    if(!r.ok){
+      vh.enviando = false; vh.erro = r.dados.erro || 'Não foi possível agendar agora.';
+      toast(vh.erro);
+      carregarVisitaHorarios(vh.protocolo);
+      return;
+    }
+    toast('Visita marcada');
+    await carregarAtendimentoReal(c);
+    state.vh = null;
+    goBack();
+  }catch(e){ vh.enviando = false; vh.erro = 'Falha de conexão. Tente novamente.'; render(); }
+}
+function screenAtendimentoMensagem({protocolo}){
   const body = `
     <p class="muted" style="margin:0 0 16px;font-size:15px;line-height:1.5;">Sua mensagem fica registrada no pedido <b>${escHtml(protocolo)}</b> e o time técnico vê por lá.</p>
     <div class="field"><label class="lb" for="am-texto">Mensagem</label><textarea class="inp" id="am-texto" maxlength="1000" placeholder="Ex: o vazamento voltou ontem à noite..."></textarea></div>
@@ -2219,11 +2317,30 @@ function categoriaBackend(tipo){
   if(/piso|parede|revestimento|pintura|acabamento/.test(t)) return 'Acabamento';
   return 'Outros';
 }
-function naSet(campo, valor){ state.na[campo] = valor; render(); }
+/* Um pedido tem VARIOS itens (um por problema): cada item tem comodo, tipo e descricao. A equipe analisa item por item. */
+function naNovo(step, tipo){ return {step, itens:[{ambiente:'', tipo, descricao:''}], atual:0, anexos:[], periodos:[], enviando:false}; }
+function naItem(){ return state.na.itens[state.na.atual]; }
+function naSet(campo, valor){ naItem()[campo] = valor; render(); }
+function naItemCompleto(it){ return !!(it.ambiente || it.tipo); }
+function naAdicionarItem(){
+  if(!naItemCompleto(naItem())){ toast('Escolha ao menos o cômodo ou o tipo de problema antes de adicionar outro.'); return; }
+  state.na.itens.push({ambiente:'', tipo:'', descricao:''});
+  state.na.atual = state.na.itens.length-1;
+  render({resetScroll:true});
+}
+function naEditarItem(i){ state.na.atual = i; render({resetScroll:true}); }
+function naRemoverItem(i){
+  const na = state.na;
+  if(na.itens.length<=1) return;
+  na.itens.splice(i,1);
+  na.atual = Math.min(na.atual, na.itens.length-1);
+  render();
+}
+function naTituloItem(it){ return [it.tipo||'Problema', it.ambiente?'· '+it.ambiente:''].filter(Boolean).join(' '); }
 function naTogglePeriodo(p){ const a = state.na.periodos; const i = a.indexOf(p); if(i>=0) a.splice(i,1); else a.push(p); render(); }
 function naProximo(){
   const na = state.na;
-  if(na.step===2 && !na.ambiente && !na.tipo){ toast('Escolha ao menos o cômodo ou o tipo de problema.'); return; }
+  if(na.step===2 && !na.itens.every(naItemCompleto)){ toast('Escolha ao menos o cômodo ou o tipo de problema em cada item.'); return; }
   na.step++; render({resetScroll:true});
 }
 async function naEscolherArquivos(input){
@@ -2237,7 +2354,8 @@ async function naEscolherArquivos(input){
 function naRemoverAnexo(i){ state.na.anexos.splice(i,1); render(); }
 function screenNovoAtendimento(){
   const na = state.na, c = contratoAtivo();
-  const resumo = [na.tipo||'Problema não especificado', na.ambiente?'na '+na.ambiente.toLowerCase():'', na.anexos.length? na.anexos.length+' foto'+(na.anexos.length>1?'s':''):'sem fotos', na.periodos.length? 'visita: '+na.periodos.join(' ou ').toLowerCase():'horário a combinar'].filter(Boolean).join(' · ');
+  const resumo = [na.itens.length+(na.itens.length>1?' itens':' item'), na.anexos.length? na.anexos.length+' foto'+(na.anexos.length>1?'s':''):'sem fotos', na.periodos.length? 'visita: '+na.periodos.join(' ou ').toLowerCase():'horário a combinar'].filter(Boolean).join(' · ');
+  const it = naItem();
   const chips = (lista, atual, fn) => `<div class="chips" style="margin-bottom:18px;">${lista.map(v=>`<button class="chip ${atual===v?'on':''}" onclick="${fn}('${jsq(v)}')">${v}</button>`).join('')}</div>`;
   let corpo = '';
   if(na.step===1){
@@ -2249,13 +2367,16 @@ function screenNovoAtendimento(){
         <button onclick="document.getElementById('na-arquivos').click()" style="aspect-ratio:1;border-radius:14px;border:1.5px dashed var(--border-strong);background:var(--surface);color:var(--muted);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;cursor:pointer;font-size:12px;font-weight:600;">${ic('camera',24)}Adicionar</button></div>
       ${btn(na.anexos.length?'Continuar':'Continuar sem foto','naProximo()','btn-primary','lg')}`;
   } else if(na.step===2){
-    corpo = `<h2 class="h2">Onde e o quê?</h2>
-      <p class="lead">${escHtml(c.contrato.empreendimento)} · Unidade ${escHtml(c.contrato.torre+' · '+c.contrato.unidade)} — já sabemos pelo seu cadastro.</p>
-      <label class="lb">Em qual cômodo?</label>${chips(NA_AMBIENTES, na.ambiente, "naSet.bind(null,'ambiente')")}
-      <label class="lb">Qual o tipo de problema?</label>${chips(NA_TIPOS, na.tipo, "naSet.bind(null,'tipo')")}
+    const outros = na.itens.map((x,i)=>({x,i})).filter(o=>o.i!==na.atual);
+    const lista = outros.length ? `<div class="card" style="margin-bottom:16px;">${outros.map(o=>`<div class="row" style="min-height:56px;"><button class="grow" style="text-align:left;background:none;border:none;padding:0;font:inherit;color:inherit;cursor:pointer;" onclick="naEditarItem(${o.i})"><span class="t">Item ${o.i+1} · ${escHtml(naTituloItem(o.x))}</span><span class="s">${escHtml((o.x.descricao||'').slice(0,60)||'Sem descrição')}${naItemCompleto(o.x)?'':' · falta escolher'}</span></button><button aria-label="Remover item" onclick="naRemoverItem(${o.i})" style="width:36px;height:36px;border:none;background:none;color:var(--muted);cursor:pointer;">${ic('close',16,2.4)}</button></div>`).join('')}</div>` : '';
+    corpo = `<h2 class="h2">${na.itens.length>1?'Item '+(na.atual+1)+': onde e o quê?':'Onde e o quê?'}</h2>
+      <p class="lead">${escHtml(c.contrato.empreendimento)} · Unidade ${escHtml(c.contrato.torre+' · '+c.contrato.unidade)} — já sabemos pelo seu cadastro. Se tiver mais de um problema, adicione um item para cada um.</p>
+      ${lista}
+      <label class="lb">Em qual cômodo?</label>${chips(NA_AMBIENTES, it.ambiente, "naSet.bind(null,'ambiente')")}
+      <label class="lb">Qual o tipo de problema?</label>${chips(NA_TIPOS, it.tipo, "naSet.bind(null,'tipo')")}
       <label class="lb" for="na-desc">Conte com suas palavras</label>
-      <textarea class="inp" id="na-desc" placeholder="Ex: apareceu uma mancha de umidade no rodapé perto do box..." oninput="state.na.descricao=this.value" style="margin-bottom:20px;">${escHtml(na.descricao)}</textarea>
-      ${btn('Continuar','naProximo()','btn-primary','lg')}`;
+      <textarea class="inp" id="na-desc" placeholder="Ex: apareceu uma mancha de umidade no rodapé perto do box..." oninput="state.na.itens[state.na.atual].descricao=this.value" style="margin-bottom:16px;">${escHtml(it.descricao)}</textarea>
+      <div class="stack">${btn('Continuar','naProximo()','btn-primary','lg')}${btn(ic('plus',18)+' Adicionar outro problema','naAdicionarItem()','btn-secondary')}</div>`;
   } else {
     corpo = `<h2 class="h2">Quando podemos ir até você?</h2>
       <p class="lead">Escolha os períodos em que alguém pode receber o técnico. Confirmamos a data por aqui.</p>
@@ -2268,17 +2389,18 @@ function screenNovoAtendimento(){
 async function salvarNovoAtendimento(){
   const na = state.na, c = contratoAtivo();
   if(na.enviando) return;
-  const tipoTexto = na.tipo || 'Outro';
-  let descricao = (na.descricao||'').trim() || 'Sem descrição detalhada.';
-  const extras = [];
-  if(na.tipo) extras.push('Tipo informado: '+na.tipo);
-  if(na.periodos.length) extras.push('Disponibilidade para visita: '+na.periodos.join('; '));
-  if(extras.length) descricao += '\n\n' + extras.join('\n');
+  /* cada item: o texto do cliente + o tipo informado; o servidor cria um item de triagem por problema */
+  const itens = na.itens.map(it=>({ambiente:it.ambiente, categoria:categoriaBackend(it.tipo||'Outro'), descricao:((it.descricao||'').trim()||'Sem descrição detalhada.')+(it.tipo?'\n\nTipo informado: '+it.tipo:'')}));
+  const primeiro = na.itens[0];
+  const tipoTexto = primeiro.tipo || 'Outro';
+  const resumoItens = na.itens.length>1 ? na.itens.map((it,i)=>(i+1)+') '+naTituloItem(it)+(it.descricao?': '+it.descricao.trim():'')).join('\n') : '';
+  let descricao = resumoItens || itens[0].descricao;
+  if(na.periodos.length) descricao += '\n\nDisponibilidade para visita: '+na.periodos.join('; ');
   na.enviando = true; render();
 
   if(c.atendimentoReal){
     try{
-      const r = await chamarProxy('/api/atendimento-novo', {oportunidadeId:c.oportunidadeId, categoria:categoriaBackend(tipoTexto), ambiente:na.ambiente, descricao});
+      const r = await chamarProxy('/api/atendimento-novo', {oportunidadeId:c.oportunidadeId, categoria:categoriaBackend(tipoTexto), ambiente:primeiro.ambiente, descricao, itens});
       if(!r.ok || !r.dados.protocolo){ toast('Não foi possível registrar a solicitação.'); na.enviando = false; render(); return; }
       let falhas = 0;
       if(r.dados.caseId){
@@ -2293,11 +2415,11 @@ async function salvarNovoAtendimento(){
     }catch(e){ toast('Falha de conexão ao registrar a solicitação.'); na.enviando = false; render(); return; }
   } else {
     nextAtendimentoNum++;
-    const novo = {id:'at'+Date.now(), protocolo:'AT-2026-0'+nextAtendimentoNum, tipo:tipoTexto, ambiente:na.ambiente||'Não informado', descricao, status:'Em andamento', sla:'Resposta em até 2 dias úteis', data:new Date().toLocaleDateString('pt-BR')};
+    const novo = {id:'at'+Date.now(), protocolo:'AT-2026-0'+nextAtendimentoNum, tipo:na.itens.length>1?na.itens.length+' itens':tipoTexto, ambiente:primeiro.ambiente||'Não informado', descricao, status:'Em andamento', sla:'Resposta em até 2 dias úteis', data:new Date().toLocaleDateString('pt-BR')};
     c.atendimentos.unshift(novo);
     state.ultimoProtocolo = novo.protocolo;
   }
-  state.na = {step:1, ambiente:'', tipo:'', descricao:'', anexos:[], periodos:[], enviando:false};
+  state.na = naNovo(1, '');
   state.tab = 'ajuda';
   state.stacks.ajuda = [{screen:'ajuda'}, {screen:'atendimentoConfirmacao'}];
   render({resetScroll:true});
@@ -2456,6 +2578,7 @@ const SCREENS = {
   atendimentoList: screenAtendimentoList,
   atendimentoDetail: screenAtendimentoDetail,
   atendimentoMensagem: screenAtendimentoMensagem,
+  visitaHorario: screenVisitaHorario,
   novoAtendimento: screenNovoAtendimento,
   atendimentoConfirmacao: screenAtendimentoConfirmacao,
   pesquisa: screenPesquisa,
