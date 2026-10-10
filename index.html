@@ -1205,8 +1205,6 @@ function abrirWhats(url, nome){
   toast('O WhatsApp de '+(nome||'a equipe')+' ainda não está configurado.');
 }
 function dataEntregaChaves(c){ return (c.pv && c.pv.entrega && c.pv.entrega.status==='Realizada' && c.pv.entrega.agenda) ? formatarDataBr(c.pv.entrega.agenda.data) : '12/09/2026'; }
-function consultorDe(c){ return c.pv ? c.pv.consultor : {nome:'Juliana Prado', cargo:'Pós-venda Codeart', whatsapp:null}; }
-function abrirWhatsConsultor(){ const k = consultorDe(contratoAtivo()); abrirWhats(k.whatsapp, k.nome.split(' ')[0]); }
 /* Garantias: [item, exemplos, prazo, restante] - do Salesforce (contadas da entrega real) ou literais no demo. */
 function garantiasDe(c){
   if(c.pv && c.pv.garantias) return c.pv.garantias.map(g=>[g.item, g.exemplos, g.prazo, g.restante||null]);
@@ -1308,8 +1306,6 @@ const EXPLICA = {
 function toggleJornada(){ state.jornadaAberta = !state.jornadaAberta; render(); }
 function screenInicio(){
   const x = ctx(), c = x.c;
-  const consultor = consultorDe(c);
-  const ini = consultor.nome.split(' ').map(p=>p[0]).slice(0,2).join('');
   const [explica, voce] = EXPLICA[x.etapaNome] || ['',''];
   const posBloco = `
     ${eyebrow('Sua casa')}
@@ -1349,12 +1345,6 @@ function screenInicio(){
     ${eyebrow('Sua próxima ação')}
     ${cardProximaAcao()}
     ${x.fasePos ? posBloco : obraBloco}
-    ${eyebrow('Quem cuida de você')}
-    <div class="card pad lg" style="padding:16px 18px;margin-bottom:18px;display:flex;align-items:center;gap:14px;">
-      <span class="disp" style="width:52px;height:52px;border-radius:50%;background:#303E47;color:var(--sun);display:flex;align-items:center;justify-content:center;font-size:18px;flex:0 0 auto;">${ini}</span>
-      <span style="flex:1;min-width:0;"><b style="font-size:16px;display:block;line-height:1.25;">${consultor.nome}</b><span class="sm" style="display:block;">${consultor.cargo} · responde em até 1 dia útil</span></span>
-      <button onclick="abrirWhatsConsultor()" aria-label="Falar no WhatsApp" class="ic t-success" style="width:44px;height:44px;border-radius:14px;border:none;cursor:pointer;">${ic('chat',22)}</button>
-    </div>
     <div class="mini-grid">${atalhos.map(q=>`<button class="quick" onclick="${q.go}">${icChip(q.ic,q.tone)}<span style="min-width:0;"><b style="font-size:15px;line-height:1.25;display:block;">${q.label}</b><span class="sm" style="font-size:12.5px;display:block;">${q.sub}</span></span></button>`).join('')}</div>`;
   return {title:'Início', body};
 }
@@ -1757,7 +1747,7 @@ function screenDocumentosList(){
       <p class="muted" style="margin:0 0 16px;line-height:1.5;font-size:15px;">Documentos que você recebeu da Codeart sobre esta unidade.</p>
       ${c.documentos.length ? `<div class="card">${c.documentos.map(d=>`<button class="row" onclick="baixarDocumentoReal('${jsq(d.contentVersionId)}')"><span class="ic t-accent">${ic('docplain',18)}</span><span class="grow"><span class="t">${escHtml(d.nome)}</span><span class="s">${escHtml(d.categoria)} · ${escHtml(d.tipoArquivo)} · ${tamanhoLegivel(d.tamanhoBytes)}</span></span><span style="color:var(--accent);display:flex;">${ic('download',20)}</span></button>`).join('')}</div>`
         : `<div class="center muted" style="padding:24px 16px;">${mascote('sentado',120,'margin-bottom:8px;')}<p style="margin:0;font-size:15px;line-height:1.5;">Nenhum documento disponível ainda. Assim que a Codeart anexar algo ao seu contrato (ex: manual do proprietário), aparece aqui automaticamente.</p></div>`}
-      ${noteBox('accent','alert','Ainda não temos tudo por aqui','Hoje só o contrato assinado está disponível no app. Manual do proprietário e outros materiais chegam em breve — enquanto isso, fale com seu consultor se precisar de algo específico.')}`;
+      ${noteBox('accent','alert','Ainda não temos tudo por aqui','Hoje só o contrato assinado está disponível no app. Manual do proprietário e outros materiais chegam em breve — enquanto isso, fale com a equipe pela Ajuda se precisar de algo específico.')}`;
     return {title:'Documentos', body};
   }
   const pend = x.docsPend.length;
@@ -2099,7 +2089,7 @@ function screenEntrega(){
 
 /* ---------- Ajuda ---------- */
 function screenAjuda(){
-  const x = ctx(), c = x.c, consultor = consultorDe(c);
+  const x = ctx(), c = x.c;
   const grupos = [
     ['Resolver algo', [
       {label:'Pedir assistência técnica', sub:'Algo quebrou ou não funciona', ic:'wrench', tone:'warning', go:"go('atendimentoList')"},
@@ -2110,7 +2100,6 @@ function screenAjuda(){
       {label:'Informe para o IR', sub:'Valores pagos por ano', ic:'receipt', tone:'accent', go:"go('informeIR')"},
       {label:'Indique um amigo', sub:'Ganhe R$ 3.000 de crédito por indicação', ic:'gift', tone:'success', go:"go('indicar')"},
       {label:'Quem mais acessa', sub:state.pessoas.length+' pessoa'+(state.pessoas.length>1?'s':'')+' com acesso ao contrato', ic:'users', tone:'neutral', go:"go('coComprador')"},
-      {label:'Falar com '+consultor.nome.split(' ')[0], sub:consultor.cargo+' · WhatsApp', ic:'phone', tone:'neutral', go:"abrirWhatsConsultor()"},
     ]],
   ];
   const recentes = c.atendimentos.slice(0,2).map(a=>atendimentoView(a));
