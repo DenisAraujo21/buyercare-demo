@@ -1364,10 +1364,10 @@ function screenInicio(){
   const body = `
     <p class="eyebrow" style="margin:0 0 2px;">Olá, ${escHtml(DB.comprador.nome.split(' ')[0])}</p>
     <h2 class="h2" style="margin-bottom:18px;">${escHtml(c.contrato.empreendimento)} <span class="muted" style="font-weight:400;">· ${escHtml(c.contrato.unidade)}</span></h2>
+    ${x.fasePos ? posBloco : obraBloco}
     ${cardArti(x)}
     ${eyebrow('Sua próxima ação')}
     ${cardProximaAcao()}
-    ${x.fasePos ? posBloco : obraBloco}
     <div class="mini-grid">${atalhos.map(q=>`<button class="quick" onclick="${q.go}">${icChip(q.ic,q.tone)}<span style="min-width:0;"><b style="font-size:15px;line-height:1.25;display:block;">${q.label}</b><span class="sm" style="font-size:12.5px;display:block;">${q.sub}</span></span></button>`).join('')}</div>`;
   return {title:'Início', body};
 }
