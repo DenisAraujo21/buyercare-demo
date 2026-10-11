@@ -234,22 +234,16 @@ textarea.inp{padding:12px 14px;resize:vertical;min-height:100px}
 .rate11{flex-wrap:wrap;gap:6px}
 .rate11 button{flex:0 0 calc(25% - 5px);max-width:none;aspect-ratio:auto;height:44px;font-size:17px;border-radius:12px}
 
-/* Arti em destaque: botao flutuante (telas raiz) e cartao no Inicio */
-.arti-fab{position:absolute;right:14px;bottom:calc(86px + env(safe-area-inset-bottom,0px));z-index:15;display:flex;align-items:center;gap:8px;border:none;cursor:pointer;background:var(--primary-bg);color:var(--primary-text);border-radius:999px;padding:6px 16px 6px 6px;min-height:52px;box-shadow:0 8px 22px rgba(48,62,71,.34);font:inherit;font-weight:700;font-size:14px;animation:artiPulso 3.2s ease-out 1s 2}
-@media (min-width:520px){.arti-fab{bottom:98px}}
-.arti-fab img{width:40px;height:40px;border-radius:50%;background:var(--sun);object-fit:contain;padding:3px;box-sizing:border-box}
-.arti-fab .ia{font-size:10px;font-weight:800;letter-spacing:.04em;padding:2px 6px;border-radius:6px;background:var(--sun);color:#303E47}
-@keyframes artiPulso{0%{box-shadow:0 8px 22px rgba(48,62,71,.34),0 0 0 0 rgba(254,214,0,.7)}70%{box-shadow:0 8px 22px rgba(48,62,71,.34),0 0 0 16px rgba(254,214,0,0)}100%{box-shadow:0 8px 22px rgba(48,62,71,.34),0 0 0 0 rgba(254,214,0,0)}}
-@media (prefers-reduced-motion:reduce){.arti-fab{animation:none}}
-.arti-hero{width:100%;background:#303E47;color:#F2F2F2;border-radius:22px;padding:16px;margin-bottom:18px;position:relative;overflow:hidden;box-sizing:border-box}
-.arti-hero .topo{display:flex;align-items:center;gap:12px;position:relative}
-.arti-hero img.m{width:60px;height:60px;object-fit:contain;flex:0 0 auto}
-.arti-hero .ia{font-size:10px;font-weight:800;letter-spacing:.04em;padding:2px 7px;border-radius:6px;background:var(--sun);color:#303E47;margin-left:6px;vertical-align:middle}
-.arti-hero .pergunta{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;margin-top:14px;min-height:48px;padding:0 6px 0 18px;border-radius:999px;border:none;background:#F2F2F2;color:#566068;font:inherit;font-size:15px;cursor:pointer;text-align:left;position:relative}
-.arti-hero .pergunta .go{width:36px;height:36px;border-radius:50%;background:#303E47;color:#fff;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
-.arti-hero .chips{display:flex;gap:8px;overflow-x:auto;margin:12px -16px 0;padding:0 16px 2px;position:relative}
-.arti-hero .chips button{flex:0 0 auto;min-height:36px;padding:0 14px;border-radius:999px;border:1px solid rgba(242,242,242,.35);background:transparent;color:#F2F2F2;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;white-space:nowrap}
-.chat-aviso-ia{font-size:12px;color:var(--muted);text-align:center;margin:0 0 12px}
+/* Arti em destaque: botao flutuante compacto (telas raiz, exceto Inicio) */
+.ia-tag{font-size:10px;font-weight:800;letter-spacing:.04em;padding:2px 6px;border-radius:6px;background:var(--sun);color:#303E47;margin-left:4px;vertical-align:middle}
+.arti-fab{position:absolute;right:14px;bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:15;display:flex;align-items:center;border:none;cursor:pointer;background:#303E47;color:#F2F2F2;border-radius:999px;padding:4px;min-height:52px;box-shadow:0 6px 18px rgba(48,62,71,.32);font:inherit;font-weight:700;font-size:14px;white-space:nowrap}
+@media (min-width:520px){.arti-fab{bottom:96px}}
+.arti-fab .av{position:relative;width:44px;height:44px;border-radius:50%;background:var(--sun);display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+.arti-fab .av img{width:38px;height:38px;object-fit:contain}
+.arti-fab .av b{position:absolute;right:-4px;bottom:-3px;font-size:9px;font-weight:800;line-height:1;padding:2px 4px;border-radius:5px;background:#303E47;color:var(--sun);border:1.5px solid #fff}
+.arti-fab .lb{max-width:150px;overflow:hidden;padding:0 12px 0 10px;animation:artiRecolhe .35s ease 5s forwards}
+@keyframes artiRecolhe{to{max-width:0;padding:0}}
+@media (prefers-reduced-motion:reduce){.arti-fab .lb{animation-duration:.01s}}
 </style>
 </head>
 <body>
@@ -592,7 +586,7 @@ function render(opts){
   const offline = state.offline ? `<div class="offline">${ic('wifioff',18)}<span style="flex:1;">Sem conexão. Mostrando dados de ${escHtml(state.offlineDesde||'agora há pouco')}.</span><button onclick="tentarReconectar()">Tentar de novo</button></div>` : '';
   const tabs = TAB_DEFS.map(([k,label,icone])=>`
     <button class="tab-btn ${k===state.tab?'active':''}" onclick="switchTab('${k}')">${ic(icone,24)}<span class="lb">${label}</span><i></i></button>`).join('');
-  const fabArti = (raiz && MASCOTE && top.screen!=='agenteChat' && top.screen!=='inicio') ? `<button class="arti-fab" onclick="abrirArti()" aria-label="Falar com a Arti, assistente com inteligência artificial"><img src="assets/arti-falando.png" alt=""><span>Pergunte à Arti</span><span class="ia">IA</span></button>` : '';
+  const fabArti = (raiz && MASCOTE && top.screen!=='agenteChat' && top.screen!=='inicio') ? `<button class="arti-fab" onclick="abrirArti()" aria-label="Pergunte ao Arti, assistente com inteligência artificial"><span class="av"><img src="assets/arti-falando.png" alt=""><b>IA</b></span><span class="lb">Pergunte ao Arti</span></button>` : '';
   root.innerHTML = `${header}<main id="view">${offline}<div class="screen-pad">${s.body}</div></main><nav class="tabbar">${tabs}</nav>${fabArti}`;
   const view = document.getElementById('view');
   view.scrollTop = opts.resetScroll ? 0 : scrollTop;
@@ -1321,19 +1315,13 @@ const EXPLICA = {
   'Entrega das chaves':['Falta pouco! Estamos preparando a entrega.','agendar a retirada das chaves.'],
   'Pós-entrega':['Você já está na sua casa. Qualquer problema, a assistência técnica resolve.','nada — aproveite!'],
 };
-/* Arti em destaque no Inicio: pergunta pronta + sugestoes da fase do cliente (obra x pos-entrega) */
+/* Arti em destaque no Inicio: mesmo cartao compacto da Ajuda */
 function cardArti(x){
-  const sugestoes = x.fasePos
-    ? ['Quando acaba a garantia?', 'Como está meu pedido?', 'Como peço assistência?']
-    : ['Como está minha obra?', 'Quando vence a próxima parcela?', 'Quando começa a garantia?'];
-  return `<div class="arti-hero">
-    <span class="ring" style="top:-60px;right:-60px;width:130px;height:130px;border-width:14px;opacity:.9;"></span>
-    <div class="topo">${MASCOTE?`<img class="m" src="assets/arti-falando.png" alt="Arti">`:''}<span style="flex:1;min-width:0;"><b class="disp" style="font-size:18px;display:block;">Arti <span class="ia">IA</span></b><span style="font-size:14px;color:#CBD1D5;display:block;margin-top:2px;line-height:1.4;">Sua assistente: tira dúvidas sobre obra, parcelas, garantia e pedidos.</span></span></div>
-    <button class="pergunta" onclick="abrirArti()"><span>Pergunte qualquer coisa…</span><span class="go">${ic('arrow',18,2.2)}</span></button>
-    <div class="chips">${sugestoes.map(s=>`<button onclick="abrirArti('${jsq(s)}')">${s}</button>`).join('')}</div>
-  </div>`;
-}
-function abrirArti(pergunta){
+  return `<button onclick="abrirArti()" style="width:100%;background:#303E47;color:#F2F2F2;border:none;border-radius:20px;padding:14px 16px;display:flex;align-items:center;gap:14px;cursor:pointer;text-align:left;margin-bottom:18px;position:relative;overflow:hidden;">
+      <span class="ring" style="top:-56px;right:-56px;width:120px;height:120px;border-width:13px;opacity:.9;"></span>
+      ${MASCOTE?`<img src="assets/arti-falando.png" alt="" style="width:52px;height:52px;object-fit:contain;flex:0 0 auto;position:relative;">`:''}
+      <span style="flex:1;min-width:0;position:relative;padding-right:26px;"><b class="disp" style="font-size:17px;display:block;color:#F2F2F2;">Pergunte ao Arti <span class="ia-tag">IA</span></b><span style="font-size:13.5px;color:#CBD1D5;display:block;margin-top:2px;line-height:1.35;">Obra, parcelas, garantia e pedidos.</span></span></button>`;
+}function abrirArti(pergunta){
   go('agenteChat');
   if(pergunta) perguntarAgente(pergunta);
 }
@@ -2542,7 +2530,7 @@ function respostaAgenteLocal(pergunta){
 }
 function screenAgenteChat(){
   const body = `
-    <p class="chat-aviso-ia">Arti é uma assistente com inteligência artificial. Confira informações importantes com a equipe.</p>
+    <p class="chat-aviso-ia">O Arti é um assistente com inteligência artificial. Confira informações importantes com a equipe.</p>
     <div style="display:flex;flex-direction:column;gap:10px;padding-bottom:8px;">${state.chat.map(m=>`<div class="chat-bubble ${m.from==='bot'?'bot':'user'}">${m.html? m.text : escHtml(m.text)}</div>`).join('')}${state.chatEnviando?`<div class="chat-bubble bot" style="opacity:.7;">Digitando...</div>`:''}</div>
     <div style="display:flex;gap:8px;overflow-x:auto;padding:2px 16px 4px;margin:14px -16px 0;">${SUGESTOES.map(s=>`<button onclick="perguntarAgente('${jsq(s)}')" style="flex:0 0 auto;min-height:40px;padding:0 14px;border-radius:999px;border:1px solid var(--border-strong);background:var(--surface);font-size:14px;font-weight:600;color:var(--text);cursor:pointer;white-space:nowrap;">${s}</button>`).join('')}</div>
     <form onsubmit="enviarMensagemAgente(event)" style="display:flex;gap:8px;margin-top:14px;">
