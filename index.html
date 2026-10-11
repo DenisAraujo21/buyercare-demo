@@ -2526,7 +2526,7 @@ function respostaAgenteLocal(pergunta){
   if(p.includes('obra') || p.includes('andamento')) return `A obra${rot} está com <b>${c.obra.percentualGeral}%</b> de evolução geral, com previsão de conclusão em <b>${escHtml(c.obra.previsao)}</b>.`;
   if(p.includes('vistoria')) return 'A vistoria abre quando a obra entra na reta final — você será avisado por aqui assim que der para marcar.';
   if(p.includes('assistência') || p.includes('assistencia')) return 'Posso te levar direto: toque em <b>Pedir assistência técnica</b> aqui na Ajuda.';
-  return 'Entendi! Vou encaminhar essa solicitação para a equipe responsável e te aviso por aqui assim que houver uma atualização.';
+  return 'Na demonstração eu só respondo sobre parcelas, obra, documentos e assistência. Em Ajuda você consegue abrir um pedido para a equipe.';
 }
 function screenAgenteChat(){
   const body = `
