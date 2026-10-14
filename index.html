@@ -10,19 +10,6 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="theme-color" content="#303e47">
 <script>
-/* iPhone com o app instalado: a janela do app pode terminar acima do fim fisico da tela (sobra uma faixa embaixo). Nesse caso o menu nao precisa
-   reservar a area do indicador de inicio por conta propria: marca a pagina (classe faixa-baixo) para o CSS encostar o menu no fim da janela. */
-(function(){
-  function marcar(){
-    var r = document.documentElement;
-    var instalado = (navigator.standalone === true) || (window.matchMedia && window.matchMedia('(display-mode:standalone)').matches);
-    var faixa = instalado && window.innerWidth < window.innerHeight && window.screen && (window.screen.height - window.innerHeight) > 40;
-    r.classList.toggle('faixa-baixo', !!faixa);
-  }
-  marcar(); window.addEventListener('resize', marcar); window.addEventListener('orientationchange', marcar);
-})();
-</script>
-<script>
 // Diagnostico de tela: abra o app com ?diag=1, ou toque 5 vezes seguidas no canto superior esquerdo (funciona no app instalado). Linha vermelha = topo e verde = fim da area do app.
 (function(){
   var ligado = false;
@@ -56,9 +43,7 @@
     }
     medir(); setInterval(medir, 700);
   }
-  // TEMPORARIO: no app instalado o painel aparece sozinho, so para diagnosticar a faixa do iPhone (remover depois)
-  var instalado = (navigator.standalone === true) || (window.matchMedia && window.matchMedia('(display-mode:standalone)').matches);
-  if(instalado || /[?&]diag=1/.test(location.search)){ window.addEventListener('load', iniciar); return; }
+  if(/[?&]diag=1/.test(location.search)){ window.addEventListener('load', iniciar); return; }
   var toques = [];
   document.addEventListener('touchstart', function(e){
     var t = e.touches && e.touches[0]; if(!t || t.clientX > 90 || t.clientY > 150) return;
@@ -70,7 +55,7 @@
 <meta name="color-scheme" content="light dark">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="CodeLar">
 <script>
   if('serviceWorker' in navigator){
@@ -135,7 +120,6 @@ b{font-weight:600}
   .stage{padding:28px 16px}
   .device{width:min(calc(100vw - 32px),404px);height:auto;max-height:100%;aspect-ratio:9/19.5;border-radius:40px;box-shadow:0 0 0 12px #263039,0 0 0 13px rgba(255,255,255,.05),var(--shadow-lg)}
 }
-html.faixa-baixo{--sab:0px}
 /* celular ou app instalado: o app cobre a tela inteira, inclusive as areas seguras do iPhone (topo e barra de baixo), sem moldura nem faixa cinza */
 @media (max-width:519px), (display-mode:standalone), (display-mode:fullscreen){
   html,body{background:#303E47;overscroll-behavior:none}
