@@ -453,6 +453,9 @@ const DB = {
 
 let nextAtendimentoNum = 143;
 function contratoAtivo(){ return DB.contratos.find(c=>c.id===state.contratoAtivo); }
+/* Um "imovel" do app e' uma unidade (negociacao) ou um condominio (mandato de sindico vigente). refDe() e' o que o servidor recebe. */
+const ehCond = c => !!c && c.tipo==='condominio';
+function refDe(c){ c = c || contratoAtivo(); return ehCond(c) ? {sindicoId:c.sindicoId} : {oportunidadeId:c.oportunidadeId}; }
 function etapaAtualLabel(c){
   const atual = c.jornada.etapas.find(e=>e.status==='atual');
   return atual ? 'Etapa atual: '+atual.nome : 'Concluído';
@@ -469,7 +472,8 @@ function aplicarFaseForcada(){
 aplicarFaseForcada();
 
 /* ---------- estado ---------- */
-function pilhasNovas(){
+function pilhasNovas(c){
+  if(ehCond(c)) return { inicio:[{screen:'inicio'}], garantias:[{screen:'garantias'}], ajuda:[{screen:'ajuda'}] };
   return { inicio:[{screen:'inicio'}], financeiro:[{screen:'financeiroList'}], obra:[{screen:'obraDetail'}], ajuda:[{screen:'ajuda'}] };
 }
 const state = {
@@ -549,7 +553,8 @@ function switchTab(tab, screen, params){
 function selecionarUnidade(id){
   if(id===state.contratoAtivo){ goBack(); return; }
   state.contratoAtivo = id;
-  state.stacks = pilhasNovas();
+  state.tab = 'inicio';
+  state.stacks = pilhasNovas(contratoAtivo());
   if(contratoAtivo().pv) sincronizarEstadoLocal(contratoAtivo());
   toast('Mostrando: '+contratoAtivo().contrato.empreendimento+' · '+contratoAtivo().contrato.unidade);
   render({resetScroll:true});
@@ -557,6 +562,7 @@ function selecionarUnidade(id){
 
 /* ---------- casca: login / primeiro acesso / boas-vindas / app ---------- */
 const TAB_DEFS = [['inicio','Início','home'],['financeiro','Financeiro','wallet'],['obra','Meu imóvel','building'],['ajuda','Ajuda','headset']];
+const TAB_COND = [['inicio','Início','home'],['garantias','Garantias','building'],['ajuda','Ajuda','headset']];
 function render(opts){
   opts = opts || {};
   const root = document.getElementById('root');
@@ -579,14 +585,14 @@ function render(opts){
     <header class="appbar">
       ${!raiz ? `<button class="iconbtn back" onclick="goBack()" aria-label="Voltar">${ic('back',22)}</button>` : ''}
       <h1>${escHtml(s.title)}</h1>
-      ${raiz && multi && top.screen!=='selecionarUnidade' ? `<button class="unit-chip" onclick="go('selecionarUnidade')" aria-label="Trocar de unidade"><span style="white-space:nowrap;">${escHtml(contratoAtivo().contrato.unidade)}</span>${ic('chevdown',14,2.2)}</button>` : ''}
+      ${raiz && multi && top.screen!=='selecionarUnidade' ? `<button class="unit-chip" onclick="go('selecionarUnidade')" aria-label="Trocar de unidade"><span style="white-space:nowrap;">${escHtml(ehCond(contratoAtivo()) ? 'Condomínio' : contratoAtivo().contrato.unidade)}</span>${ic('chevdown',14,2.2)}</button>` : ''}
       ${raiz ? `<button class="iconbtn" onclick="go('avisos')" aria-label="Avisos">${ic('bell',22)}${naoLidos?`<span class="bell-badge">${naoLidos}</span>`:''}</button>` : ''}
       ${top.screen==='inicio' ? `<button class="iconbtn" onclick="doLogout()" aria-label="Sair">${ic('logout',20)}</button>` : ''}
     </header>`;
   const offline = state.offline ? `<div class="offline">${ic('wifioff',18)}<span style="flex:1;">Sem conexão. Mostrando dados de ${escHtml(state.offlineDesde||'agora há pouco')}.</span><button onclick="tentarReconectar()">Tentar de novo</button></div>` : '';
-  const tabs = TAB_DEFS.map(([k,label,icone])=>`
+  const tabs = (ehCond(contratoAtivo()) ? TAB_COND : TAB_DEFS).map(([k,label,icone])=>`
     <button class="tab-btn ${k===state.tab?'active':''}" onclick="switchTab('${k}')">${ic(icone,24)}<span class="lb">${label}</span><i></i></button>`).join('');
-  const fabArti = (raiz && MASCOTE && top.screen!=='agenteChat' && top.screen!=='inicio') ? `<button class="arti-fab" onclick="abrirArti()" aria-label="Pergunte ao Arti, assistente com inteligência artificial"><span class="av"><img src="assets/arti-falando.png" alt=""><b>IA</b></span><span class="lb">Pergunte ao Arti</span></button>` : '';
+  const fabArti = (raiz && MASCOTE && top.screen!=='agenteChat' && top.screen!=='inicio' && !ehCond(contratoAtivo())) ? `<button class="arti-fab" onclick="abrirArti()" aria-label="Pergunte ao Arti, assistente com inteligência artificial"><span class="av"><img src="assets/arti-falando.png" alt=""><b>IA</b></span><span class="lb">Pergunte ao Arti</span></button>` : '';
   root.innerHTML = `${header}<main id="view">${offline}<div class="screen-pad">${s.body}</div></main><nav class="tabbar">${tabs}</nav>${fabArti}`;
   const view = document.getElementById('view');
   view.scrollTop = opts.resetScroll ? 0 : scrollTop;
@@ -610,6 +616,7 @@ function tentarReconectar(){
   else toast('Ainda sem conexão. Tentamos de novo em instantes.');
 }
 function recarregarDadosReais(){
+  DB.contratos.filter(c=>ehCond(c)).forEach(c=>{ carregarAtendimentoReal(c); carregarCondominio(c); });
   DB.contratos.filter(c=>c.oportunidadeId).forEach(c=>{
     carregarObraReal(c); carregarFinanceiroReal(c); carregarDocumentosReal(c); carregarAtendimentoReal(c); carregarPosVenda(c);
   });
@@ -704,14 +711,29 @@ function novoContratoReal(real, i){
     atendimentos:[],
   };
 }
-/* Aplica a resposta de /api/login (ou do primeiro acesso): comprador, contratos reais e unidade ativa. */
+/* Condominio em que a pessoa e' sindica (mandato vigente): so' pedidos de assistencia da area comum e garantias. */
+function novoCondominio(cond, i){
+  return {
+    id:'k'+(i+1), tipo:'condominio', sindicoId:cond.sindicoId, permissao:'Síndico', tipoSindico:cond.tipo||'', desde:cond.desde||'', areas:cond.areas||[],
+    contrato:{empreendimento:cond.empreendimento||'', unidade:'Condomínio', torre:'', metragem:'', valor:0, dataAssinatura:''},
+    jornada:{etapas:jornadaDe('Pós-entrega'), previsao:''},
+    parcelas:[], incc:{ultimoReajuste:'', dataReajuste:'', indice:''}, temIncc:false,
+    documentos:[],
+    obra:{percentualGeral:100, previsao:'', etapas:[], comunicados:[]},
+    atendimentos:[],
+  };
+}
+/* Aplica a resposta de /api/login (ou do primeiro acesso): comprador, unidades e condominios reais e o imovel ativo. */
 function aplicarLogin(dados){
   DB.comprador.nome = dados.nome || DB.comprador.nome;
   state.sessao = dados.token || null; /* o proxy exige a sessao em toda chamada de um imovel */
-  if(Array.isArray(dados.contratos) && dados.contratos.length){
-    DB.contratos = dados.contratos.map(novoContratoReal);
+  const unidades = Array.isArray(dados.contratos) ? dados.contratos.map(novoContratoReal) : [];
+  const condominios = Array.isArray(dados.condominios) ? dados.condominios.map(novoCondominio) : [];
+  if(unidades.length || condominios.length){
+    DB.contratos = unidades.concat(condominios);
     state.contratoAtivo = DB.contratos[0].id;
-    state.stacks = pilhasNovas();
+    state.tab = 'inicio';
+    state.stacks = pilhasNovas(DB.contratos[0]);
   }
 }
 const CONTRATOS_DEMO = DB.contratos;
@@ -852,7 +874,7 @@ function onboardingHtml(){
   </div>`;
 }
 function proximoOnboarding(){ if(state.onbIdx>=2) entrarNoApp(); else { state.onbIdx++; render(); } }
-function entrarNoApp(){ state.mode = 'app'; state.tab = 'inicio'; state.stacks = pilhasNovas(); render({resetScroll:true}); recarregarDadosReais(); }
+function entrarNoApp(){ state.mode = 'app'; state.tab = 'inicio'; state.stacks = pilhasNovas(contratoAtivo()); render({resetScroll:true}); recarregarDadosReais(); }
 
 
 /* ---------- dados reais (via proxy -> Salesforce) ---------- */
@@ -870,7 +892,7 @@ function formatarDataMesAno(iso){
 }
 async function chamarProxy(rota, corpo){
   /* Chamadas de um imovel levam a sessao do login; o servidor confere sessao + acesso + permissao. */
-  if(corpo && corpo.oportunidadeId && state.sessao) corpo = Object.assign({sessao:state.sessao}, corpo);
+  if(corpo && (corpo.oportunidadeId || corpo.sindicoId) && state.sessao) corpo = Object.assign({sessao:state.sessao}, corpo);
   const resp = await fetch(BUYERCARE_API_BASE + rota, {
     method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(corpo)
   });
@@ -947,13 +969,21 @@ async function carregarDocumentosReal(contrato){
 }
 /* Solicitacoes reais de assistencia tecnica (Case, RecordType CA_AssistenciaTecnica). */
 async function carregarAtendimentoReal(contrato){
-  if(!contrato.oportunidadeId) return;
+  if(!contrato.oportunidadeId && !contrato.sindicoId) return;
   try{
-    const r = await chamarProxy('/api/atendimento', {oportunidadeId: contrato.oportunidadeId});
+    const r = await chamarProxy('/api/atendimento', refDe(contrato));
     if(!r.ok || !Array.isArray(r.dados.atendimentos)) return;
     contrato.atendimentos = r.dados.atendimentos;
     contrato.atendimentoReal = true;
   }catch(e){ /* mantem o mock */ }
+  renderSeApp();
+}
+/* Garantias da area comum (contadas da entrega da area comum) e as areas para o pedido, do mandato de sindico. */
+async function carregarCondominio(c){
+  try{
+    const r = await chamarProxy('/api/pos-venda', {...refDe(c), acao:'condominio-estado'});
+    if(r.ok){ c.cond = r.dados; c.condReal = true; if(Array.isArray(r.dados.areas) && r.dados.areas.length) c.areas = r.dados.areas; }
+  }catch(e){ /* mantem o que tinha */ }
   renderSeApp();
 }
 
@@ -1219,11 +1249,13 @@ function abrirWhats(url, nome){
 function dataEntregaChaves(c){ return (c.pv && c.pv.entrega && c.pv.entrega.status==='Realizada' && c.pv.entrega.agenda) ? formatarDataBr(c.pv.entrega.agenda.data) : '12/09/2026'; }
 /* Garantias: [item, exemplos, prazo, restante] - do Salesforce (contadas da entrega real) ou literais no demo. */
 function garantiasDe(c){
+  if(ehCond(c)) return ((c.cond && c.cond.garantias) || []).map(g=>[g.item, g.exemplos, g.prazo, g.restante||null]);
   if(c.pv && c.pv.garantias) return c.pv.garantias.map(g=>[g.item, g.exemplos, g.prazo, g.restante||null]);
   const demo = {'90 dias':'38 dias', '1 ano':'10 meses', '2 anos':'1 ano e 10 m', '5 anos':'4 anos e 10 m'};
   return GARANTIAS.map(g=>[g[0], g[1], g[2], demo[g[2]]]);
 }
 function proximaGarantia(c){
+  if(ehCond(c)){ const l = ((c.cond && c.cond.garantias) || []).filter(g=>g.diasRestantes!=null && g.diasRestantes>0).sort((a,b)=>a.diasRestantes-b.diasRestantes); return l[0] ? l[0].item+' ('+l[0].prazo+')' : ''; }
   if(c.pv && c.pv.garantias){
     const l = c.pv.garantias.filter(g=>g.diasRestantes!=null && g.diasRestantes>0).sort((a,b)=>a.diasRestantes-b.diasRestantes);
     return l[0] ? l[0].item+' ('+l[0].prazo+')' : '';
@@ -1326,7 +1358,46 @@ function cardArti(x){
   if(pergunta) perguntarAgente(pergunta);
 }
 function toggleJornada(){ state.jornadaAberta = !state.jornadaAberta; render(); }
+/* Inicio do condominio: a obra esta concluida; o que o sindico precisa e' das garantias, dos pedidos e da visita do tecnico. */
+function screenInicioCondominio(){
+  const c = contratoAtivo(), k = c.cond || {};
+  const aberto = c.atendimentos.filter(a=>a.status!=='Concluído').length;
+  const desde = formatarDataBr(c.desde || '');
+  const papel = 'Síndico' + (c.tipoSindico==='Administradora' ? ' (administradora)' : '') + (desde ? ' desde '+desde : '');
+  const temPrazos = !!(c.condReal && k.entregaAreaComum);
+  let garantiaTxt;
+  if(!c.condReal) garantiaTxt = 'Carregando as garantias da área comum…';
+  else if(!k.entregaAreaComum) garantiaTxt = 'A equipe ainda vai informar a data de entrega da área comum. Assim que ela estiver cadastrada, os prazos de garantia aparecem aqui.';
+  else { const pg = proximaGarantia(c); garantiaTxt = pg ? `A próxima garantia a vencer é <b style="color:var(--text);">${escHtml(pg)}</b>. Se notar algo, abra um pedido antes do prazo.` : 'Os prazos de garantia da área comum já venceram. Ainda assim, abra um pedido que a equipe avalia.'; }
+  const escolhe = c.atendimentos.flatMap(a=>[a].concat(a.assistencias||[])).find(a=>a.escolheVisita);
+  const acao = escolhe
+    ? acaoCard('cal','sun','Escolher horário da visita','A equipe liberou a visita do pedido '+escHtml(escolhe.protocolo)+'. Escolha o dia e a janela de chegada do técnico.', btn('Escolher dia e horário',`abrirVisitaHorario('${jsq(escolhe.protocolo)}')`,'btn-primary','sm'))
+    : `<div class="card pad lg" style="margin-bottom:18px;display:flex;align-items:center;gap:12px;">${icChip('checkcircle','success')}<div style="flex:1;min-width:0;"><b class="disp" style="font-size:18px;display:block;line-height:1.25;">Nada pendente com você</b><p class="sm" style="font-size:14px;margin:4px 0 0;">Se algo precisar da sua atenção, como escolher o horário de uma visita, aparece aqui primeiro.</p></div></div>`;
+  const atalhos = [
+    {label:'Pedir assistência', sub:'Problema na área comum', ic:'wrench', tone:'warning', go:'novoPedido()'},
+    {label:'Garantias', sub:temPrazos ? c.cond.garantias.length+' sistemas' : 'Prazos da área comum', ic:'building', tone:'sun', go:"switchTab('garantias')"},
+    {label:'Meus pedidos', sub:aberto+' em andamento', ic:'doc', tone:'accent', go:"switchTab('ajuda','atendimentoList')"},
+    {label:'Ajuda', sub:'Falar com a equipe', ic:'headset', tone:'success', go:"switchTab('ajuda')"},
+  ];
+  const body = `
+    <p class="eyebrow" style="margin:0 0 2px;">Olá, ${escHtml(DB.comprador.nome.split(' ')[0])}</p>
+    <h2 class="h2" style="margin-bottom:18px;">${escHtml(c.contrato.empreendimento)} <span class="muted" style="font-weight:400;">· Condomínio</span></h2>
+    ${eyebrow('Seu condomínio')}
+    <div class="card pad lg" style="margin-bottom:18px;">
+      <div style="display:flex;align-items:center;gap:14px;">${icChip('checkcircle','success','xl')}<span style="flex:1;min-width:0;"><span class="sm">${escHtml(papel)}</span><b class="disp" style="display:block;font-size:20px;line-height:1.2;">Obra concluída</b></span></div>
+      <div class="mini-grid" style="margin-top:16px;">
+        <div class="mini"><span class="k">Garantias</span><b>${temPrazos ? c.cond.garantias.length : '—'}</b><span class="sm">sistemas</span></div>
+        <div class="mini"><span class="k">Pedidos</span><b>${aberto}</b><span class="sm">em andamento</span></div>
+      </div>
+      <p class="sm" style="font-size:14px;line-height:1.55;margin:14px 0 0;">${garantiaTxt}</p>
+    </div>
+    ${eyebrow('Sua próxima ação')}
+    ${acao}
+    <div class="mini-grid">${atalhos.map(q=>`<button class="quick" onclick="${q.go}">${icChip(q.ic,q.tone)}<span style="min-width:0;"><b style="font-size:15px;line-height:1.25;display:block;">${q.label}</b><span class="sm" style="font-size:12.5px;display:block;">${q.sub}</span></span></button>`).join('')}</div>`;
+  return {title:'Início', body};
+}
 function screenInicio(){
+  if(ehCond(contratoAtivo())) return screenInicioCondominio();
   const x = ctx(), c = x.c;
   const [explica, voce] = EXPLICA[x.etapaNome] || ['',''];
   const posBloco = `
@@ -1908,6 +1979,16 @@ function compartilharResumo(){
 /* ---------- Garantias (prazos NBR 15575) ---------- */
 function screenGarantias(){
   const x = ctx(), pos = x.etapaNome==='Pós-entrega';
+  if(ehCond(x.c)){
+    const k = x.c.cond;
+    if(!x.c.condReal) return {title:'Garantias da área comum', body:'<p class="muted center" style="padding:32px 0;">Carregando as garantias...</p>'};
+    if(!k.entregaAreaComum) return {title:'Garantias da área comum', body:noteBox('accent','alert','Em breve','A equipe ainda vai informar a data de entrega da área comum. Assim que ela estiver cadastrada, os prazos de garantia de cada sistema aparecem aqui.')};
+    return {title:'Garantias da área comum', body:`
+      <p class="muted" style="margin:0 0 16px;line-height:1.5;font-size:15px;">Cada sistema da área comum tem um prazo de garantia contado a partir da entrega da área comum (${escHtml(formatarDataBr(k.entregaAreaComum))}). Dentro do prazo, o reparo é por nossa conta.</p>
+      <div class="card">${garantiasDe(x.c).map(([item,ex,prazo,restante])=>`<button class="row" onclick="pedirPorGarantia('${jsq(item)}')"><span class="grow"><span class="t">${escHtml(item)}</span><span class="s">${escHtml(ex||'')}</span></span><span style="text-align:right;flex:0 0 auto;"><span class="disp" style="display:block;font-size:16px;">${escHtml(prazo)}</span><span style="display:block;font-size:12px;color:var(--success);font-weight:600;">${restante ? escHtml(restante)+' restantes' : 'Na garantia'}</span></span></button>`).join('')}</div>
+      <div class="pill-note"><b>Viu algo fora do normal?</b> Toque no sistema para abrir um pedido de assistência.</div>
+      <p class="sm" style="margin:0;">Mau uso, falta de manutenção preventiva ou alterações feitas por terceiros não são cobertas.</p>`};
+  }
   const body = `
     <p class="muted" style="margin:0 0 16px;line-height:1.5;font-size:15px;">Cada parte do imóvel tem um prazo de garantia contado a partir da entrega das chaves. Dentro do prazo, o reparo é por nossa conta.</p>
     <div class="card">${garantiasDe(x.c).map(([item,ex,prazo,restante])=>`<button class="row" onclick="pedirPorGarantia('${jsq(item)}')"><span class="grow"><span class="t">${item}</span><span class="s">${ex}</span></span><span style="text-align:right;flex:0 0 auto;"><span class="disp" style="display:block;font-size:16px;">${prazo}</span><span style="display:block;font-size:12px;color:${pos?'var(--success)':'var(--muted)'};font-weight:600;">${pos?(restante?restante+' restantes':'Na garantia'):'Conta a partir da entrega'}</span></span></button>`).join('')}</div>
@@ -2125,12 +2206,13 @@ function screenAjuda(){
       {label:'Quem mais acessa', sub:state.pessoas.length+' pessoa'+(state.pessoas.length>1?'s':'')+' com acesso ao contrato', ic:'users', tone:'neutral', go:"go('coComprador')"},
     ]],
   ];
+  if(ehCond(c)){ grupos.length = 1; grupos[0][1] = grupos[0][1].slice(0,1); }
   const recentes = c.atendimentos.slice(0,2).map(a=>atendimentoView(a));
   const body = `
-    <button onclick="go('agenteChat')" style="width:100%;background:#303E47;color:#F2F2F2;border:none;border-radius:20px;padding:18px;display:flex;align-items:center;gap:14px;cursor:pointer;text-align:left;margin-bottom:16px;position:relative;overflow:hidden;">
+    ${ehCond(c) ? '' : `<button onclick="go('agenteChat')" style="width:100%;background:#303E47;color:#F2F2F2;border:none;border-radius:20px;padding:18px;display:flex;align-items:center;gap:14px;cursor:pointer;text-align:left;margin-bottom:16px;position:relative;overflow:hidden;">
       <span class="ring" style="top:-56px;right:-56px;width:130px;height:130px;border-width:14px;opacity:.9;"></span>
       ${MASCOTE?`<img src="assets/arti-falando.png" alt="Arti" style="width:64px;height:64px;object-fit:contain;flex:0 0 auto;position:relative;">`:''}
-      <span style="flex:1;min-width:0;position:relative;padding-right:28px;"><b class="disp" style="font-size:18px;display:block;color:#F2F2F2;">Tire uma dúvida agora</b><span style="font-size:14px;color:#CBD1D5;display:block;margin-top:2px;line-height:1.4;">Respondo sobre parcelas, obra e documentos do seu contrato.</span></span></button>
+      <span style="flex:1;min-width:0;position:relative;padding-right:28px;"><b class="disp" style="font-size:18px;display:block;color:#F2F2F2;">Tire uma dúvida agora</b><span style="font-size:14px;color:#CBD1D5;display:block;margin-top:2px;line-height:1.4;">Respondo sobre parcelas, obra e documentos do seu contrato.</span></span></button>`}
     ${grupos.map(([nome,itens])=>`${eyebrow(nome,'" style="margin-bottom:8px')}<div class="card" style="margin-bottom:20px;">${itens.map(h=>`<button class="row" onclick="${h.go}">${icChip(h.ic,h.tone)}<span class="grow"><b style="font-size:15px;display:block;">${h.label}</b><span class="sm" style="display:block;">${h.sub}</span></span><span style="color:var(--muted);display:flex;">${ic('chevron',18)}</span></button>`).join('')}</div>`).join('')}
     ${recentes.length ? `<div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:0 0 10px;">${eyebrow('Pedidos em andamento','m0')}<button class="btn btn-link" style="min-height:36px;" onclick="go('atendimentoList')">Ver todos</button></div>
       <div class="card">${recentes.map(a=>linhaAtendimento(a)).join('')}</div>` : ''}`;
@@ -2163,7 +2245,7 @@ function screenAtendimentoList(){
     ${assistenciaLiberada() ? btn(ic('plus',18)+' Novo pedido de assistência','novoPedido()','btn-primary','lg') : noteBox('accent','alert','Disponível depois da entrega das chaves','A garantia e a assistência técnica começam quando você recebe as chaves. Até lá, fale com a equipe pelo chat.')}
     ${eyebrow('Seus pedidos','mt" style="margin:24px 0 12px')}
     ${lista.length ? `<div class="card">${lista.map(linhaAtendimento).join('')}</div>`
-      : `<div class="center muted" style="padding:24px 16px;">${mascote('sentado',120,'margin-bottom:8px;')}<p style="margin:0;font-size:15px;line-height:1.5;">Nenhum pedido aberto para esta unidade.</p></div>`}`;
+      : `<div class="center muted" style="padding:24px 16px;">${mascote('sentado',120,'margin-bottom:8px;')}<p style="margin:0;font-size:15px;line-height:1.5;">Nenhum pedido aberto para ${ehCond(c)?'este condomínio':'esta unidade'}.</p></div>`}`;
   return {title:'Assistência técnica', body};
 }
 function conversaAtendimentoHtml(raw){
@@ -2244,7 +2326,7 @@ function abrirVisitaHorario(protocolo){
 async function carregarVisitaHorarios(protocolo){
   const c = contratoAtivo();
   try{
-    const r = await chamarProxy('/api/pos-venda', {oportunidadeId:c.oportunidadeId, acao:'assistencia-horarios', dados:{protocolo}});
+    const r = await chamarProxy('/api/pos-venda', {...refDe(c), acao:'assistencia-horarios', dados:{protocolo}});
     if(!state.vh || state.vh.protocolo!==protocolo) return;
     if(!r.ok){ state.vh.erro = r.dados.erro || 'Não foi possível carregar os horários.'; state.vh.dias = []; }
     else { state.vh.dias = r.dados.dias || []; if(!state.vh.dias.length) state.vh.erro = 'No momento não há horários livres. A equipe vai entrar em contato.'; }
@@ -2282,7 +2364,7 @@ async function vhConfirmar(){
   if(!podeAgir(c)) return;
   vh.enviando = true; vh.erro = ''; render();
   try{
-    const r = await chamarProxy('/api/pos-venda', {oportunidadeId:c.oportunidadeId, acao:'assistencia-agendar', dados:{protocolo:vh.protocolo, data:vh.data.data, janela:vh.janela}});
+    const r = await chamarProxy('/api/pos-venda', {...refDe(c), acao:'assistencia-agendar', dados:{protocolo:vh.protocolo, data:vh.data.data, janela:vh.janela}});
     if(!r.ok){
       vh.enviando = false; vh.erro = r.dados.erro || 'Não foi possível agendar agora.';
       toast(vh.erro);
@@ -2308,7 +2390,7 @@ async function enviarComentarioAtendimento(protocolo){
   const btnEl = document.getElementById('am-enviar');
   btnEl.disabled = true; btnEl.textContent = 'Enviando...';
   try{
-    const r = await chamarProxy('/api/atendimento-comentario', {oportunidadeId: contratoAtivo().oportunidadeId, protocolo, tipo:'mensagem', texto});
+    const r = await chamarProxy('/api/atendimento-comentario', {...refDe(), protocolo, tipo:'mensagem', texto});
     if(!r.ok){ toast(r.dados.erro || 'Não foi possível enviar agora.'); btnEl.disabled = false; btnEl.textContent = 'Enviar mensagem'; return; }
     toast('Mensagem enviada ao técnico'); goBack();
   }catch(e){ toast('Falha de conexão. Tente novamente.'); btnEl.disabled = false; btnEl.textContent = 'Enviar mensagem'; }
@@ -2330,12 +2412,15 @@ function categoriaBackend(tipo){
   return 'Outros';
 }
 /* Um pedido tem VARIOS itens (um por problema): cada item tem comodo, tipo e descricao. A equipe analisa item por item. */
-function naNovo(step, tipo){ return {step, itens:[{ambiente:'', tipo, descricao:''}], atual:0, anexos:[], periodos:[], enviando:false}; }
+function naNovo(step, tipo){ return {step, itens:[{ambiente:'', tipo, descricao:''}], atual:0, anexos:[], periodos:[], recebe:'', enviando:false}; }
+/* Areas comuns do condominio (as da manutencao preventiva); sem elas carregadas, as seis padrao. */
+const NA_AREAS_PADRAO = ['Elevadores','Bombas e casa de máquinas','Reservatórios de água','SPDA e instalações elétricas comuns','Combate a incêndio','Fachada e impermeabilização'];
+function naAreasDe(c){ return (c.areas && c.areas.length) ? c.areas : NA_AREAS_PADRAO; }
 function naItem(){ return state.na.itens[state.na.atual]; }
 function naSet(campo, valor){ naItem()[campo] = valor; render(); }
 function naItemCompleto(it){ return !!(it.ambiente || it.tipo); }
 function naAdicionarItem(){
-  if(!naItemCompleto(naItem())){ toast('Escolha ao menos o cômodo ou o tipo de problema antes de adicionar outro.'); return; }
+  if(!naItemCompleto(naItem())){ toast(ehCond(contratoAtivo()) ? 'Escolha ao menos a área ou o tipo de problema antes de adicionar outro.' : 'Escolha ao menos o cômodo ou o tipo de problema antes de adicionar outro.'); return; }
   state.na.itens.push({ambiente:'', tipo:'', descricao:''});
   state.na.atual = state.na.itens.length-1;
   render({resetScroll:true});
@@ -2352,7 +2437,7 @@ function naTituloItem(it){ return [it.tipo||'Problema', it.ambiente?'· '+it.amb
 function naTogglePeriodo(p){ const a = state.na.periodos; const i = a.indexOf(p); if(i>=0) a.splice(i,1); else a.push(p); render(); }
 function naProximo(){
   const na = state.na;
-  if(na.step===2 && !na.itens.every(naItemCompleto)){ toast('Escolha ao menos o cômodo ou o tipo de problema em cada item.'); return; }
+  if(na.step===2 && !na.itens.every(naItemCompleto)){ toast(ehCond(contratoAtivo()) ? 'Escolha ao menos a área ou o tipo de problema em cada item.' : 'Escolha ao menos o cômodo ou o tipo de problema em cada item.'); return; }
   na.step++; render({resetScroll:true});
 }
 async function naEscolherArquivos(input){
@@ -2382,9 +2467,9 @@ function screenNovoAtendimento(){
     const outros = na.itens.map((x,i)=>({x,i})).filter(o=>o.i!==na.atual);
     const lista = outros.length ? `<div class="card" style="margin-bottom:16px;">${outros.map(o=>`<div class="row" style="min-height:56px;"><button class="grow" style="text-align:left;background:none;border:none;padding:0;font:inherit;color:inherit;cursor:pointer;" onclick="naEditarItem(${o.i})"><span class="t">Item ${o.i+1} · ${escHtml(naTituloItem(o.x))}</span><span class="s">${escHtml((o.x.descricao||'').slice(0,60)||'Sem descrição')}${naItemCompleto(o.x)?'':' · falta escolher'}</span></button><button aria-label="Remover item" onclick="naRemoverItem(${o.i})" style="width:36px;height:36px;border:none;background:none;color:var(--muted);cursor:pointer;">${ic('close',16,2.4)}</button></div>`).join('')}</div>` : '';
     corpo = `<h2 class="h2">${na.itens.length>1?'Item '+(na.atual+1)+': onde e o quê?':'Onde e o quê?'}</h2>
-      <p class="lead">${escHtml(c.contrato.empreendimento)} · Unidade ${escHtml(c.contrato.torre+' · '+c.contrato.unidade)} — já sabemos pelo seu cadastro. Se tiver mais de um problema, adicione um item para cada um.</p>
+      <p class="lead">${ehCond(c) ? escHtml(c.contrato.empreendimento)+' · Áreas comuns — já sabemos pelo seu cadastro de síndico.' : escHtml(c.contrato.empreendimento)+' · Unidade '+escHtml(c.contrato.torre+' · '+c.contrato.unidade)+' — já sabemos pelo seu cadastro.'} Se tiver mais de um problema, adicione um item para cada um.</p>
       ${lista}
-      <label class="lb">Em qual cômodo?</label>${chips(NA_AMBIENTES, it.ambiente, "naSet.bind(null,'ambiente')")}
+      <label class="lb">${ehCond(c) ? 'Em qual área?' : 'Em qual cômodo?'}</label>${chips(ehCond(c) ? naAreasDe(c) : NA_AMBIENTES, it.ambiente, "naSet.bind(null,'ambiente')")}
       <label class="lb">Qual o tipo de problema?</label>${chips(NA_TIPOS, it.tipo, "naSet.bind(null,'tipo')")}
       <label class="lb" for="na-desc">Conte com suas palavras</label>
       <textarea class="inp" id="na-desc" placeholder="Ex: apareceu uma mancha de umidade no rodapé perto do box..." oninput="state.na.itens[state.na.atual].descricao=this.value" style="margin-bottom:16px;">${escHtml(it.descricao)}</textarea>
@@ -2393,6 +2478,8 @@ function screenNovoAtendimento(){
     corpo = `<h2 class="h2">Quando podemos ir até você?</h2>
       <p class="lead">Escolha os períodos em que alguém pode receber o técnico. Confirmamos a data por aqui.</p>
       <div class="stack" style="margin-bottom:20px;">${NA_PERIODOS.map(p=>{ const on = na.periodos.includes(p); return `<button class="choice ${on?'on':''}" style="justify-content:space-between;" onclick="naTogglePeriodo('${jsq(p)}')"><span>${p}</span><span class="checkbox ${on?'on':''}" style="${on?'background:var(--primary-bg);border-color:var(--primary-bg);color:var(--primary-text);':''}width:22px;height:22px;border-radius:6px;">${on?ic('check',14,3):''}</span></button>`; }).join('')}</div>
+      ${ehCond(c) ? `<label class="lb" for="na-recebe">Quem recebe o técnico? <span class="muted" style="font-weight:400;">(opcional)</span></label>
+      <input class="inp" id="na-recebe" maxlength="150" placeholder="Nome e telefone do porteiro ou zelador" value="${escHtml(na.recebe||'')}" oninput="state.na.recebe=this.value" style="margin-bottom:20px;">` : ''}
       <div class="card pad" style="padding:14px 16px;font-size:14px;line-height:1.6;margin-bottom:20px;"><span class="muted">Resumo:</span> <b>${escHtml(resumo)}</b></div>
       ${btn(na.enviando?'Enviando...':'Enviar pedido','salvarNovoAtendimento()','btn-primary','lg')}`;
   }
@@ -2410,14 +2497,14 @@ async function salvarNovoAtendimento(){
   if(na.periodos.length) descricao += '\n\nDisponibilidade para visita: '+na.periodos.join('; ');
   na.enviando = true; render();
 
-  if(c.atendimentoReal){
+  if(c.atendimentoReal || ehCond(c)){
     try{
-      const r = await chamarProxy('/api/atendimento-novo', {oportunidadeId:c.oportunidadeId, categoria:categoriaBackend(tipoTexto), ambiente:primeiro.ambiente, descricao, itens});
+      const r = await chamarProxy('/api/atendimento-novo', {...refDe(c), categoria:categoriaBackend(tipoTexto), ambiente:primeiro.ambiente, descricao, itens, recebeTecnico: (ehCond(c) && (na.recebe||'').trim()) ? na.recebe.trim() : undefined});
       if(!r.ok || !r.dados.protocolo){ toast('Não foi possível registrar a solicitação.'); na.enviando = false; render(); return; }
       let falhas = 0;
       if(r.dados.caseId){
         for(const a of na.anexos){
-          const ra = await chamarProxy('/api/atendimento-anexo', {oportunidadeId:c.oportunidadeId, caseId:r.dados.caseId, nomeArquivo:a.nome, tipoArquivo:a.tipo, conteudoBase64:a.base64}).catch(()=>({ok:false}));
+          const ra = await chamarProxy('/api/atendimento-anexo', {...refDe(c), caseId:r.dados.caseId, nomeArquivo:a.nome, tipoArquivo:a.tipo, conteudoBase64:a.base64}).catch(()=>({ok:false}));
           if(!ra.ok) falhas++;
         }
       }
@@ -2471,16 +2558,16 @@ async function psEnviar(){
   if(ps.contexto==='posvenda' && ps.pesquisaId){
     const texto = [ps.tags.length?'Pesou na nota: '+ps.tags.join(', '):'', ps.comentario.trim()].filter(Boolean).join('\n');
     try{
-      const r = await chamarProxy('/api/pesquisa', {oportunidadeId:c.oportunidadeId, acao:'responder', pesquisaId:ps.pesquisaId, nota:ps.nota, comentario: texto||undefined});
+      const r = await chamarProxy('/api/pesquisa', {...refDe(c), acao:'responder', pesquisaId:ps.pesquisaId, nota:ps.nota, comentario: texto||undefined});
       if(!r.ok || (r.dados && r.dados.erro)){ toast((r.dados && r.dados.erro) || 'Não foi possível enviar agora.'); ps.enviando = false; render(); return; }
       await carregarAtendimentoReal(c);
     }catch(e){ toast('Falha de conexão. Tente novamente.'); ps.enviando = false; render(); return; }
   }
   /* avaliacao de atendimento: vai para o Salesforce (comentario publico no Case com a nota) */
-  if(ps.contexto==='atendimento' && c.atendimentoReal && ps.protocolo){
+  if(ps.contexto==='atendimento' && c.atendimentoReal && ps.protocolo){ /* (so' a unidade tem esse tipo de avaliacao) */
     const texto = [ps.tags.length?'Pesou na nota: '+ps.tags.join(', '):'', ps.comentario.trim()].filter(Boolean).join('\n');
     try{
-      const r = await chamarProxy('/api/atendimento-comentario', {oportunidadeId:c.oportunidadeId, protocolo:ps.protocolo, tipo:'avaliacao', nota:ps.nota, texto: texto||undefined});
+      const r = await chamarProxy('/api/atendimento-comentario', {...refDe(c), protocolo:ps.protocolo, tipo:'avaliacao', nota:ps.nota, texto: texto||undefined});
       if(!r.ok){ toast(r.dados.erro || 'Não foi possível enviar agora.'); ps.enviando = false; render(); return; }
     }catch(e){ toast('Falha de conexão. Tente novamente.'); ps.enviando = false; render(); return; }
   }
@@ -2507,8 +2594,8 @@ function screenPesquisa(){
 function screenSelecionarUnidade(){
   const body = `
     <p class="muted" style="margin:0 0 16px;line-height:1.5;font-size:15px;">Você tem ${DB.contratos.length} imóveis com a Codeart. Escolha qual deseja acompanhar.</p>
-    <div class="stack">${DB.contratos.map(u=>{ const sel = u.id===state.contratoAtivo; return `<button onclick="selecionarUnidade('${u.id}')" style="border:2px solid ${sel?'var(--accent)':'var(--card-border)'};border-radius:18px;padding:14px 16px;display:flex;align-items:center;gap:14px;cursor:pointer;background:var(--surface);text-align:left;width:100%;box-shadow:var(--card-shadow);min-height:64px;color:var(--text);"><span class="radio" style="width:22px;height:22px;border-color:${sel?'var(--accent)':'var(--border-strong)'};">${sel?'<i style="width:11px;height:11px;background:var(--accent);"></i>':''}</span><span style="flex:1;min-width:0;"><b class="disp" style="font-size:16px;display:block;">${escHtml(u.contrato.empreendimento)}</b><span class="sm">Unidade ${escHtml(u.contrato.unidade)} · ${escHtml(etapaAtualLabel(u).replace('Etapa atual: ',''))}</span></span></button>`; }).join('')}</div>`;
-  return {title:'Minhas unidades', body};
+    <div class="stack">${DB.contratos.map(u=>{ const sel = u.id===state.contratoAtivo; return `<button onclick="selecionarUnidade('${u.id}')" style="border:2px solid ${sel?'var(--accent)':'var(--card-border)'};border-radius:18px;padding:14px 16px;display:flex;align-items:center;gap:14px;cursor:pointer;background:var(--surface);text-align:left;width:100%;box-shadow:var(--card-shadow);min-height:64px;color:var(--text);"><span class="radio" style="width:22px;height:22px;border-color:${sel?'var(--accent)':'var(--border-strong)'};">${sel?'<i style="width:11px;height:11px;background:var(--accent);"></i>':''}</span><span style="flex:1;min-width:0;"><b class="disp" style="font-size:16px;display:block;">${escHtml(u.contrato.empreendimento)}</b><span class="sm">${ehCond(u) ? 'Condomínio · você é síndico'+(u.desde ? ' desde '+escHtml(formatarDataBr(u.desde)) : '') : 'Unidade '+escHtml(u.contrato.unidade)+' · '+escHtml(etapaAtualLabel(u).replace('Etapa atual: ',''))}</span></span></button>`; }).join('')}</div>`;
+  return {title:'Meus imóveis', body};
 }
 
 /* ---------- Chat com o Arti (assistente virtual) ---------- */
