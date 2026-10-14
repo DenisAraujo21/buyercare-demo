@@ -56,7 +56,9 @@
     }
     medir(); setInterval(medir, 700);
   }
-  if(/[?&]diag=1/.test(location.search)){ window.addEventListener('load', iniciar); return; }
+  // TEMPORARIO: no app instalado o painel aparece sozinho, so para diagnosticar a faixa do iPhone (remover depois)
+  var instalado = (navigator.standalone === true) || (window.matchMedia && window.matchMedia('(display-mode:standalone)').matches);
+  if(instalado || /[?&]diag=1/.test(location.search)){ window.addEventListener('load', iniciar); return; }
   var toques = [];
   document.addEventListener('touchstart', function(e){
     var t = e.touches && e.touches[0]; if(!t || t.clientX > 90 || t.clientY > 150) return;
