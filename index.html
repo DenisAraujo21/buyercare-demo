@@ -9,6 +9,18 @@
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="theme-color" content="#303e47">
+<script>
+/* App instalado no iPhone: a area visivel as vezes fica menor que a tela (sobra uma faixa embaixo e o menu "flutua"). Mede a altura real e guarda em --app-h. */
+(function(){
+  function ajustar(){
+    var r = document.documentElement;
+    var instalado = (navigator.standalone === true) || (window.matchMedia && window.matchMedia('(display-mode:standalone)').matches);
+    if(!instalado || window.innerWidth >= window.innerHeight){ r.style.removeProperty('--app-h'); return; }
+    r.style.setProperty('--app-h', Math.max(window.innerHeight, (window.screen && window.screen.height) || 0) + 'px');
+  }
+  ajustar(); window.addEventListener('resize', ajustar); window.addEventListener('orientationchange', ajustar);
+})();
+</script>
 <meta name="color-scheme" content="light dark">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -80,7 +92,7 @@ b{font-weight:600}
 /* celular ou app instalado: o app cobre a tela inteira, inclusive as areas seguras do iPhone (topo e barra de baixo), sem moldura nem faixa cinza */
 @media (max-width:519px), (display-mode:standalone), (display-mode:fullscreen){
   html,body{background:#303E47;overscroll-behavior:none}
-  .stage{position:fixed;top:0;right:0;bottom:0;left:0;height:auto;padding:0;display:block}
+  .stage{position:fixed;top:0;right:0;bottom:0;left:0;height:var(--app-h,auto);padding:0;display:block}
   .device{width:100%;max-width:none;height:100%;max-height:none;aspect-ratio:auto;border-radius:0;box-shadow:none}
 }
 
@@ -97,7 +109,7 @@ main#view{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;position:relative;min-
 .offline{display:flex;align-items:center;gap:10px;background:var(--text);color:var(--page);padding:10px 16px;font-size:13.5px;font-weight:600}
 .offline button{background:rgba(255,255,255,.15);border:none;color:inherit;font-weight:600;font-size:13px;border-radius:999px;min-height:32px;padding:0 12px;cursor:pointer}
 
-nav.tabbar{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:space-around;background:var(--chrome-bg);border-top:1px solid var(--chrome-border);padding:8px 6px calc(10px + env(safe-area-inset-bottom,0px));z-index:20}
+nav.tabbar{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:space-around;background:var(--chrome-bg);border-top:1px solid var(--chrome-border);padding:8px 6px calc(2px + env(safe-area-inset-bottom,0px));z-index:20}
 @media (min-width:520px){nav.tabbar{padding-bottom:22px}}
 .tab-btn{background:none;border:none;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;padding:6px 8px;min-width:64px;min-height:52px;color:var(--chrome-muted)}
 .tab-btn.active{color:var(--chrome-active)}
@@ -241,7 +253,7 @@ textarea.inp{padding:12px 14px;resize:vertical;min-height:100px}
 
 /* Arti em destaque: botao flutuante compacto (telas raiz, exceto Inicio) */
 .ia-tag{font-size:10px;font-weight:800;letter-spacing:.04em;padding:2px 6px;border-radius:6px;background:var(--sun);color:#303E47;margin-left:4px;vertical-align:middle}
-.arti-fab{position:absolute;right:14px;bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:15;display:flex;align-items:center;border:none;cursor:pointer;background:#303E47;color:#F2F2F2;border-radius:999px;padding:4px;min-height:52px;box-shadow:0 6px 18px rgba(48,62,71,.32);font:inherit;font-weight:700;font-size:14px;white-space:nowrap}
+.arti-fab{position:absolute;right:14px;bottom:calc(76px + env(safe-area-inset-bottom,0px));z-index:15;display:flex;align-items:center;border:none;cursor:pointer;background:#303E47;color:#F2F2F2;border-radius:999px;padding:4px;min-height:52px;box-shadow:0 6px 18px rgba(48,62,71,.32);font:inherit;font-weight:700;font-size:14px;white-space:nowrap}
 @media (min-width:520px){.arti-fab{bottom:96px}}
 .arti-fab .av{position:relative;width:44px;height:44px;border-radius:50%;background:var(--sun);display:flex;align-items:center;justify-content:center;flex:0 0 auto}
 .arti-fab .av img{width:38px;height:38px;object-fit:contain}
@@ -1299,7 +1311,7 @@ function acaoCard(icone, tone, titulo, texto, botoesHtml){
   </div>`;
 }
 function cardProximaAcao(){
-  const x = ctx(), tipo = proximaAcao();
+  const x = ctx(), tipo = proximaAcao(), c = x.c;
   if(tipo==='atraso'){
     const a = x.atrasadas[0];
     return acaoCard('alert','danger','Pagar parcela em atraso',
