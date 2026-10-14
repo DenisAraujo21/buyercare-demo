@@ -141,9 +141,9 @@ main#view{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;position:relative;min-
 .offline{display:flex;align-items:center;gap:10px;background:var(--text);color:var(--page);padding:10px 16px;font-size:13.5px;font-weight:600}
 .offline button{background:rgba(255,255,255,.15);border:none;color:inherit;font-weight:600;font-size:13px;border-radius:999px;min-height:32px;padding:0 12px;cursor:pointer}
 
-nav.tabbar{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:space-around;background:var(--chrome-bg);border-top:1px solid var(--chrome-border);padding:8px 6px calc(2px + max(6px, calc(var(--sab,env(safe-area-inset-bottom,0px)) - 18px)));z-index:20}
+nav.tabbar{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:space-around;background:var(--chrome-bg);border-top:1px solid var(--chrome-border);padding:6px 6px calc(2px + max(2px, calc(var(--sab,env(safe-area-inset-bottom,0px)) - 30px)));z-index:20}
 @media (min-width:520px){nav.tabbar{padding-bottom:22px}}
-.tab-btn{background:none;border:none;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;padding:6px 8px;min-width:64px;min-height:52px;color:var(--chrome-muted)}
+.tab-btn{background:none;border:none;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;padding:4px 8px;min-width:64px;min-height:44px;color:var(--chrome-muted)}
 .tab-btn.active{color:var(--chrome-active)}
 .tab-btn span.lb{font-size:11px;font-weight:600;letter-spacing:.02em}
 .tab-btn i{width:5px;height:5px;border-radius:50%;background:var(--sun);opacity:0}
@@ -285,7 +285,7 @@ textarea.inp{padding:12px 14px;resize:vertical;min-height:100px}
 
 /* Arti em destaque: botao flutuante compacto (telas raiz, exceto Inicio) */
 .ia-tag{font-size:10px;font-weight:800;letter-spacing:.04em;padding:2px 6px;border-radius:6px;background:var(--sun);color:#303E47;margin-left:4px;vertical-align:middle}
-.arti-fab{position:absolute;right:14px;bottom:calc(76px + max(6px, calc(var(--sab,env(safe-area-inset-bottom,0px)) - 18px)));z-index:15;display:flex;align-items:center;border:none;cursor:pointer;background:#303E47;color:#F2F2F2;border-radius:999px;padding:4px;min-height:52px;box-shadow:0 6px 18px rgba(48,62,71,.32);font:inherit;font-weight:700;font-size:14px;white-space:nowrap}
+.arti-fab{position:absolute;right:14px;bottom:calc(68px + max(2px, calc(var(--sab,env(safe-area-inset-bottom,0px)) - 30px)));z-index:15;display:flex;align-items:center;border:none;cursor:pointer;background:#303E47;color:#F2F2F2;border-radius:999px;padding:4px;min-height:52px;box-shadow:0 6px 18px rgba(48,62,71,.32);font:inherit;font-weight:700;font-size:14px;white-space:nowrap}
 @media (min-width:520px){.arti-fab{bottom:96px}}
 .arti-fab .av{position:relative;width:44px;height:44px;border-radius:50%;background:var(--sun);display:flex;align-items:center;justify-content:center;flex:0 0 auto}
 .arti-fab .av img{width:38px;height:38px;object-fit:contain}
@@ -641,7 +641,7 @@ function render(opts){
   const offline = state.offline ? `<div class="offline">${ic('wifioff',18)}<span style="flex:1;">Sem conexão. Mostrando dados de ${escHtml(state.offlineDesde||'agora há pouco')}.</span><button onclick="tentarReconectar()">Tentar de novo</button></div>` : '';
   const tabs = (ehCond(contratoAtivo()) ? TAB_COND : TAB_DEFS).map(([k,label,icone])=>`
     <button class="tab-btn ${k===state.tab?'active':''}" onclick="switchTab('${k}')">${ic(icone,24)}<span class="lb">${label}</span><i></i></button>`).join('');
-  const fabArti = (raiz && MASCOTE && top.screen!=='agenteChat' && top.screen!=='inicio' && !ehCond(contratoAtivo())) ? `<button class="arti-fab" onclick="abrirArti()" aria-label="Pergunte ao Arti, assistente com inteligência artificial"><span class="av"><img src="assets/arti-falando.png" alt=""><b>IA</b></span><span class="lb">Pergunte ao Arti</span></button>` : '';
+  const fabArti = (raiz && MASCOTE && top.screen!=='agenteChat' && !ehCond(contratoAtivo())) ? `<button class="arti-fab" onclick="abrirArti()" aria-label="Pergunte ao Arti, assistente com inteligência artificial"><span class="av"><img src="assets/arti-falando.png" alt=""><b>IA</b></span><span class="lb">Pergunte ao Arti</span></button>` : '';
   root.innerHTML = `${header}<main id="view">${offline}<div class="screen-pad">${s.body}</div></main><nav class="tabbar">${tabs}</nav>${fabArti}`;
   const view = document.getElementById('view');
   view.scrollTop = opts.resetScroll ? 0 : scrollTop;
@@ -1486,7 +1486,6 @@ function screenInicio(){
     <p class="eyebrow" style="margin:0 0 2px;">Olá, ${escHtml(DB.comprador.nome.split(' ')[0])}</p>
     <h2 class="h2" style="margin-bottom:18px;">${escHtml(c.contrato.empreendimento)} <span class="muted" style="font-weight:400;">· ${escHtml(c.contrato.unidade)}</span></h2>
     ${x.fasePos ? posBloco : obraBloco}
-    ${cardArti(x)}
     ${eyebrow('Sua próxima ação')}
     ${cardProximaAcao()}
     <div class="mini-grid">${atalhos.map(q=>`<button class="quick" onclick="${q.go}">${icChip(q.ic,q.tone)}<span style="min-width:0;"><b style="font-size:15px;line-height:1.25;display:block;">${q.label}</b><span class="sm" style="font-size:12.5px;display:block;">${q.sub}</span></span></button>`).join('')}</div>`;
