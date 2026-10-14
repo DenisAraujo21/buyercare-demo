@@ -485,7 +485,7 @@ const state = {
   tab:'inicio',
   mode:'login',            // login | primeiroAcesso | onboarding | app
   loginLoading:false,
-  loginEmail:'bruno.carvalho@exemplo.com.br',
+  loginEmail:'',
   loginErro:null,
   financeiroExpandido:false,
   jornadaAberta:false,
@@ -647,7 +647,8 @@ function loginHtml(){
         <button class="btn btn-white lg" onclick="doLogin()" ${loading?'disabled':''}>${loading?'<span class="spinner"></span> Entrando...':GOOGLE_ICON+' Entrar com Google'}</button>
         <button class="btn btn-outline-dark lg" onclick="doLogin()" ${loading?'disabled':''}>${APPLE_ICON} Entrar com Apple</button>
         ${state.loginErro ? `<p style="color:#E2726C;font-size:13.5px;margin:0;line-height:1.45;">${escHtml(state.loginErro)}</p>` : ''}
-        <p style="color:#9FA9AF;font-size:12px;margin:0;">Demonstração: o login social é simulado — vale o e-mail acima.</p>
+        ${QS.get('demo') ? `<div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;"><button type="button" class="chip" onclick="state.loginEmail='bruno.carvalho@exemplo.com.br';render()" style="color:#F2F2F2;border-color:rgba(255,255,255,.3);background:transparent;">Conta de demonstração: Bruno (comprador)</button></div>` : ''}
+        <p style="color:#9FA9AF;font-size:12px;margin:0;">Versão beta: o login social é simulado. Use o e-mail cadastrado na Codeart.</p>
       </div>
       <div style="margin-top:22px;padding-top:18px;border-top:1px solid rgba(255,255,255,.12);width:100%;max-width:300px;">
         <p style="color:#CBD1D5;font-size:14px;margin:0 0 6px;">Comprou um imóvel e ainda não tem acesso?</p>
