@@ -1451,7 +1451,7 @@ function screenInicio(){
     {label:'Documentos', sub:'Contrato e envios', ic:'doc', tone:'accent', go:"go('documentosList')"},
     x.fasePos ? {label:'Garantias', sub:garantiasDe(c).length+' itens cobertos', ic:'building', tone:'sun', go:"switchTab('obra','garantias')"}
               : {label:'Fotos da obra', sub:'Atualizado em '+((c.obra.comunicados[0]||{data:'—'}).data.slice(3)), ic:'building', tone:'sun', go:"switchTab('obra')"},
-    {label:'Pedir assistência', sub:'Algo quebrou?', ic:'wrench', tone:'warning', go:"switchTab('ajuda','atendimentoList')"},
+    {label:'Pedir assistência', sub:x.fasePos ? 'Algo quebrou?' : 'Só depois das chaves', ic:'wrench', tone:x.fasePos ? 'warning' : 'neutral', go:"switchTab('ajuda','atendimentoList')"},
   ];
   const body = `
     <p class="eyebrow" style="margin:0 0 2px;">Olá, ${escHtml(DB.comprador.nome.split(' ')[0])}</p>
@@ -2217,7 +2217,7 @@ function screenAjuda(){
   const x = ctx(), c = x.c;
   const grupos = [
     ['Resolver algo', [
-      {label:'Pedir assistência técnica', sub:'Algo quebrou ou não funciona', ic:'wrench', tone:'warning', go:"go('atendimentoList')"},
+      {label:'Pedir assistência técnica', sub:assistenciaLiberada() ? 'Algo quebrou ou não funciona' : 'Só depois da entrega das chaves', ic:'wrench', tone:assistenciaLiberada() ? 'warning' : 'neutral', go:"go('atendimentoList')"},
       {label:'Falar com o financeiro', sub:'Parcelas, boletos e reajuste', ic:'mail', tone:'success', go:"go('solicitacaoFinanceira',{})"},
       {label:'Meus documentos', sub:'Contrato e envios pendentes', ic:'doc', tone:'accent', go:"go('documentosList')"},
     ]],
@@ -2263,7 +2263,7 @@ function screenAtendimentoList(){
   const c = contratoAtivo();
   const lista = c.atendimentos.map(atendimentoView);
   const body = `
-    ${assistenciaLiberada() ? btn(ic('plus',18)+' Novo pedido de assistência','novoPedido()','btn-primary','lg') : noteBox('accent','alert','Disponível depois da entrega das chaves','A garantia e a assistência técnica começam quando você recebe as chaves. Até lá, fale com a equipe pelo chat.')}
+    ${assistenciaLiberada() ? btn(ic('plus',18)+' Novo pedido de assistência','novoPedido()','btn-primary','lg') : noteBox('accent','alert','Assistência técnica só depois da entrega das chaves','A obra ainda está em andamento: a garantia e a assistência técnica começam quando você recebe as chaves. Até lá, para parcelas, boletos e reajuste, use Ajuda > Falar com o financeiro.')}
     ${eyebrow('Seus pedidos','mt" style="margin:24px 0 12px')}
     ${lista.length ? `<div class="card">${lista.map(linhaAtendimento).join('')}</div>`
       : `<div class="center muted" style="padding:24px 16px;">${mascote('sentado',120,'margin-bottom:8px;')}<p style="margin:0;font-size:15px;line-height:1.5;">Nenhum pedido aberto para ${ehCond(c)?'este condomínio':'esta unidade'}.</p></div>`}`;
